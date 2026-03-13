@@ -1,7 +1,7 @@
 # Sprint 5 — Data Pipeline & Persistence
 
 **Depends on:** Sprint 4 completed (unified cross-league ratings working)
-**Status:** NOT STARTED
+**Status:** COMPLETED (2026-03-13)
 **Goal:** Move from ad-hoc scripts to a production-grade data pipeline with persistent storage, automated refresh, and a queryable API layer.
 
 ---
@@ -105,12 +105,12 @@ Guard against silent data issues as the pipeline runs over time.
 
 ## Acceptance Criteria
 
-- [ ] ADR for storage engine written and decision made
-- [ ] Database schema implemented and populated with all existing data
-- [ ] Pipeline runs end-to-end: fetch → ingest → rate → persist
-- [ ] Pipeline is idempotent and logged
-- [ ] `predict_match()` returns calibrated probabilities
-- [ ] Validation catches at least: duplicates, missing matches, schema drift
+- [x] ADR for storage engine written and decision made
+- [x] Database schema implemented and populated with all existing data
+- [x] Pipeline runs end-to-end: fetch → ingest → rate → persist
+- [x] Pipeline is idempotent and logged
+- [x] `predict_match()` returns calibrated probabilities
+- [x] Validation catches at least: duplicates, missing matches, schema drift
 
 ## Out of Scope
 

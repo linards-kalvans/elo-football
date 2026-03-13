@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Football Elo Ratings{% endblock %}</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
+
+    {% block extra_head %}{% endblock %}
+
+    <style>
+        /* Custom styles */
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="h-full bg-gray-50">
+    <div class="min-h-full">
+        <!-- Navigation -->
+        <nav class="bg-white shadow-sm border-b border-gray-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex">
+                        <div class="flex-shrink-0 flex items-center">
+                            <a href="/" class="text-xl font-bold text-gray-900">
+                                ⚽ Football Elo
+                            </a>
+                        </div>
+                        <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                            <a href="/"
+                               class="{% if request.url.path == '/' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Rankings
+                            </a>
+                            <a href="/predict"
+                               class="{% if request.url.path == '/predict' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Predict
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Search bar -->
+                    <div class="flex items-center">
+                        <div class="w-full max-w-xs" x-data="{ open: false, query: '', results: [] }">
+                            <div class="relative">
+                                <input
+                                    type="text"
+                                    x-model="query"
+                                    @input.debounce.300ms="
+                                        if (query.length > 0) {
+                                            fetch(`/api/search?q=${query}&limit=5`)
+                                                .then(r => r.json())
+                                                .then(data => { results = data.results; open = true; })
+                                        } else {
+                                            results = [];
+                                            open = false;
+                                        }
+                                    "
+                                    @click.away="open = false"
+                                    placeholder="Search teams..."
+                                    class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                />
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                    </svg>
+                                </div>
+
+                                <!-- Search results dropdown -->
+                                <div x-show="open && results.length > 0"
+                                     x-cloak
+                                     class="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200">
+                                    <ul class="max-h-60 rounded-md py-1 text-base overflow-auto focus:outline-none sm:text-sm">
+                                        <template x-for="result in results" :key="result.id">
+                                            <li>
+                                                <a :href="`/team/${result.id}`"
+                                                   class="block px-4 py-2 hover:bg-gray-100">
+                                                    <div class="font-medium text-gray-900" x-text="result.name"></div>
+                                                    <div class="text-sm text-gray-500" x-text="result.country"></div>
+                                                </a>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main content -->
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-gray-200 mt-12">
+            <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                <p class="text-center text-sm text-gray-500">
+                    Data sources: <a href="https://www.football-data.co.uk" class="text-indigo-600 hover:text-indigo-500">Football-Data.co.uk</a>
+                    & <a href="https://github.com/openfootball" class="text-indigo-600 hover:text-indigo-500">openfootball</a>
+                </p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

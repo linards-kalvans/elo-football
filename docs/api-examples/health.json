@@ -1,0 +1,8 @@
+{
+  "status": "ok",
+  "version": "1.0.0",
+  "database_connected": true,
+  "total_teams": 300,
+  "total_matches": 20833,
+  "latest_match_date": "2026-03-09"
+}

@@ -1,0 +1,12 @@
+{
+  "query": "bayern",
+  "count": 1,
+  "results": [
+    {
+      "id": 23,
+      "name": "Bayern Munich",
+      "country": "Germany",
+      "aliases": ["FC Bayern München", "Bayern"]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "count": 8,
+  "leagues": [
+    {"name": "Champions League", "country": "Europe", "tier": 1},
+    {"name": "Europa League", "country": "Europe", "tier": 3},
+    {"name": "Conference League", "country": "Europe", "tier": 4},
+    {"name": "Premier League", "country": "England", "tier": 5},
+    {"name": "La Liga", "country": "Spain", "tier": 5},
+    {"name": "Bundesliga", "country": "Germany", "tier": 5},
+    {"name": "Serie A", "country": "Italy", "tier": 5},
+    {"name": "Ligue 1", "country": "France", "tier": 5}
+  ]
+}

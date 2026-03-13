@@ -1,0 +1,11 @@
+{
+  "date": "2024-01-01",
+  "count": 5,
+  "rankings": [
+    {"rank": 1, "team": "Man City", "country": "England", "rating": 1778.2},
+    {"rank": 2, "team": "Arsenal", "country": "England", "rating": 1751.3},
+    {"rank": 3, "team": "Real Madrid", "country": "Spain", "rating": 1748.9},
+    {"rank": 4, "team": "Bayern Munich", "country": "Germany", "rating": 1742.1},
+    {"rank": 5, "team": "Liverpool", "country": "England", "rating": 1719.4}
+  ]
+}

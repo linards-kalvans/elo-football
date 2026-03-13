@@ -1,0 +1,16 @@
+{
+  "date": null,
+  "count": 10,
+  "rankings": [
+    {"rank": 1, "team": "Bayern Munich", "country": "Germany", "rating": 1835.9},
+    {"rank": 2, "team": "Arsenal", "country": "England", "rating": 1835.7},
+    {"rank": 3, "team": "Barcelona", "country": "Spain", "rating": 1757.1},
+    {"rank": 4, "team": "Paris SG", "country": "France", "rating": 1740.8},
+    {"rank": 5, "team": "Man City", "country": "England", "rating": 1721.1},
+    {"rank": 6, "team": "Inter", "country": "Italy", "rating": 1710.2},
+    {"rank": 7, "team": "Real Madrid", "country": "Spain", "rating": 1707.9},
+    {"rank": 8, "team": "Chelsea", "country": "England", "rating": 1693.7},
+    {"rank": 9, "team": "Liverpool", "country": "England", "rating": 1686.9},
+    {"rank": 10, "team": "Milan", "country": "Italy", "rating": 1678.8}
+  ]
+}

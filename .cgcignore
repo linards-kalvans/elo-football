@@ -1,0 +1,5 @@
+*.ipynb
+.venv/
+/build/
+/dist/
+*.log

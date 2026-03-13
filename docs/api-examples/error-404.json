@@ -1,0 +1,5 @@
+{
+  "error": "HTTPException",
+  "message": "Team with ID 999 not found",
+  "detail": null
+}

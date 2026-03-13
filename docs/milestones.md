@@ -57,57 +57,93 @@ Source European competition data, normalize competition names/formats across era
 
 ## M3: Data Pipeline & Persistence
 
-**Sprint:** [5](sprint-5-plan.md) | **Status:** NOT STARTED
+**Sprint:** [5](sprint-5-plan.md) | **Status:** COMPLETED
 
 Move from ad-hoc scripts to a production-grade pipeline with persistent storage and automated refresh.
 
 **Key deliverables:**
-- **Storage engine ADR** (`docs/adr-storage-engine.md`) — evaluate SQLite vs PostgreSQL vs DuckDB vs Parquet against project requirements
-- Database schema and migration scripts
+- **Storage engine ADR** (`docs/adr-storage-engine.md`) — SQLite chosen for operational simplicity
+- Database schema with 5 tables: teams, competitions, matches, ratings_history, parameters
 - Automated fetch → ingest → rate → persist pipeline (idempotent, logged)
-- Match prediction Python API (`engine.predict_match()`)
+- Match prediction Python API (`predict_match()`, `predict_match_from_db()`)
 - Data validation and monitoring (schema drift, completeness, duplicates)
 
-**Key decision:** Storage engine choice — data volume is small (~19k rows, +1,900/year) so any option works technically; decision is about operational simplicity vs. future flexibility.
+**Key results:**
+- SQLite database at `data/elo.db` with WAL mode and foreign keys
+- `src/db/` module: connection, schema, repository, seed, validation
+- `src/pipeline.py`: idempotent pipeline with duplicate detection
+- `src/prediction.py`: match prediction API with database integration
+- Comprehensive test coverage (89 tests passing)
 
 **Exit criteria:**
-- [ ] Storage engine ADR written and decision made
-- [ ] Database populated with all historical data
-- [ ] Pipeline runs end-to-end and is schedulable
-- [ ] Prediction API returns calibrated probabilities
+- [x] Storage engine ADR written and decision made
+- [x] Database populated with all historical data
+- [x] Pipeline runs end-to-end and is schedulable
+- [x] Prediction API returns calibrated probabilities
 
 ---
 
 ## M4: Web Application
 
-**Sprints:** [6](sprint-6-plan.md)–[7](sprint-7-plan.md) | **Status:** NOT STARTED
+**Sprints:** [6](sprint-6-plan.md)–[7](sprint-7-plan.md) | **Status:** IN PROGRESS
 
 Ship the user-facing web application — the project's ultimate deliverable.
 
 **Key deliverables:**
-- **Frontend tooling ADR** (`docs/adr-frontend-tooling.md`) — evaluate HTMX, Alpine.js, standalone charting libs, and full SPA options against interactivity requirements
-- FastAPI backend with rankings, team detail, prediction, and search endpoints
-- **Comprehensive API documentation** — contract doc, example responses, OpenAPI spec enabling independent frontend development
-- Interactive frontend: rankings table, Elo trajectory charts, team detail pages
+- **Frontend tooling ADR** (`docs/adr-frontend-tooling.md`) — HTMX + Alpine.js + Chart.js + Tailwind CSS ✅
+- FastAPI backend with rankings, team detail, prediction, and search endpoints ✅
+- **Comprehensive API documentation** — contract doc, example responses, OpenAPI spec ✅
+- Interactive frontend: rankings table, Elo trajectory charts, team detail pages (IN PROGRESS)
 - Match prediction widget (select two teams → win/draw/loss probabilities)
 - Historical date explorer (date picker → ratings at any past date)
-- Deployment: Docker, CI/CD, hosting
+- Deployment: Docker, CI/CD to Hetzner VPS
 
 **Key decisions:**
-- Frontend tooling choice — balance interactivity needs (zoomable charts, dynamic tables) against stack preferences (Tailwind, no-framework default)
-- API contract conventions — pagination, error shapes, filtering patterns
+- Frontend tooling: HTMX + Alpine.js + Chart.js (Sprint 6 ADR) ✅
+- Frontend structure: backend/templates/ + backend/static/ (co-located with FastAPI) ✅
+- Hosting: Hetzner VPS with Docker container ✅
+- Deployment: GitHub Actions CI/CD ✅
+- Chart.js scope: Start simple (basic line charts), defer advanced features (zoom/pan, multi-team overlay) to future enhancement
 
-| Sprint | Focus |
-|--------|-------|
-| [Sprint 6](sprint-6-plan.md) | Frontend ADR, FastAPI backend, API documentation, database integration |
-| [Sprint 7](sprint-7-plan.md) | Frontend (rankings, team detail, charts), predictions, historical explorer, deployment |
+| Sprint | Focus | Status |
+|--------|-------|--------|
+| [Sprint 6](sprint-6-plan.md) | Frontend ADR, FastAPI backend, API documentation, database integration | COMPLETED ✅ |
+| [Sprint 7](sprint-7-plan.md) | Frontend (rankings, team detail, charts), predictions, historical explorer, deployment | IN PROGRESS 🚧 |
 
 **Exit criteria:**
-- [ ] Web app deployed and publicly accessible
+- [ ] Web app deployed to Hetzner VPS and publicly accessible
 - [ ] Rankings, team detail, predictions, and historical queries all working
-- [ ] API fully documented with contract doc and example responses
+- [x] API fully documented with contract doc and example responses
 - [ ] Responsive on mobile and desktop
 - [ ] CI/CD pipeline: lint → test → build → deploy
+
+---
+
+## M4.5: Chart.js Enhancements
+
+**Sprints:** TBD | **Status:** NOT STARTED
+
+Enhance the Chart.js visualizations with advanced interactive features deferred from Sprint 7.
+
+**Scope:**
+- **Zoom and pan**: Allow users to zoom into specific time periods and pan across the full timeline
+- **Multi-team overlay**: Compare multiple teams on a single chart (different colored lines)
+- **Date range selection**: Interactive date range picker to filter chart data
+- **Export functionality**: Download chart as PNG or CSV
+- **Performance optimization**: Lazy loading for teams with >1000 matches
+
+**Depends on:** M4 (Sprint 7 frontend complete)
+
+**Key questions:**
+- Use Chart.js zoom plugin or custom implementation?
+- How many teams can overlay before performance degrades?
+- Should we add chart presets (e.g., "Last season", "All time", "CL campaigns only")?
+
+**Exit criteria:**
+- [ ] Zoom/pan working smoothly on desktop and mobile
+- [ ] Multi-team overlay supports at least 5 teams simultaneously
+- [ ] Date range picker integrated with chart updates
+- [ ] Chart performance acceptable with 2000+ data points
 
 ---
 

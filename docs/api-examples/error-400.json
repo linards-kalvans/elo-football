@@ -1,0 +1,5 @@
+{
+  "error": "HTTPException",
+  "message": "Home and away teams must be different",
+  "detail": null
+}

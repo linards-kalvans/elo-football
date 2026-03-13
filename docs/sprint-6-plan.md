@@ -1,7 +1,7 @@
 # Sprint 6 — Backend API & Documentation
 
 **Depends on:** Sprint 5 completed (database, pipeline, prediction API)
-**Status:** NOT STARTED
+**Status:** COMPLETED (2026-03-13)
 **Goal:** Ship a fully documented FastAPI backend with comprehensive API contracts, enabling frontend development to proceed independently.
 
 ---
@@ -109,15 +109,15 @@ Wire the FastAPI backend to the Sprint 5 database layer.
 
 ## Acceptance Criteria
 
-- [ ] Frontend tooling ADR written and decision made
-- [ ] FastAPI backend running with all listed endpoints
-- [ ] All endpoints return correctly shaped Pydantic responses
-- [ ] API contract document covers every endpoint with request/response examples
-- [ ] Example JSON responses exist for every endpoint (success + error cases)
-- [ ] OpenAPI spec is complete and exportable at `/openapi.json`
-- [ ] API tests pass (unit + integration)
-- [ ] Error responses follow a consistent shape across all endpoints
-- [ ] A frontend developer can build against the API using only `docs/api-contract.md` + example responses
+- [x] Frontend tooling ADR written and decision made
+- [x] FastAPI backend running with all listed endpoints
+- [x] All endpoints return correctly shaped Pydantic responses
+- [x] API contract document covers every endpoint with request/response examples
+- [x] Example JSON responses exist for every endpoint (success + error cases)
+- [x] OpenAPI spec is complete and exportable at `/openapi.json`
+- [x] API tests pass (unit + integration) — 153 total tests passing
+- [x] Error responses follow a consistent shape across all endpoints
+- [x] A frontend developer can build against the API using only `docs/api-contract.md` + example responses
 
 ## Out of Scope
 

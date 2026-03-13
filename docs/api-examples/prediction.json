@@ -1,0 +1,10 @@
+{
+  "home_team": "Arsenal",
+  "away_team": "Chelsea",
+  "home_rating": 1835.7,
+  "away_rating": 1693.7,
+  "rating_diff": 142.0,
+  "p_home": 0.6315,
+  "p_draw": 0.1654,
+  "p_away": 0.2030
+}

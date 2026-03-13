@@ -1,0 +1,28 @@
+{
+  "id": 17,
+  "name": "Arsenal",
+  "country": "England",
+  "aliases": [],
+  "current_rating": 1835.7,
+  "rank": 2,
+  "recent_matches": [
+    {
+      "date": "2026-03-09",
+      "home_team": "Arsenal",
+      "away_team": "Man United",
+      "home_goals": 2,
+      "away_goals": 0,
+      "result": "H",
+      "competition": "Premier League"
+    },
+    {
+      "date": "2026-03-01",
+      "home_team": "West Ham",
+      "away_team": "Arsenal",
+      "home_goals": 1,
+      "away_goals": 3,
+      "result": "A",
+      "competition": "Premier League"
+    }
+  ]
+}

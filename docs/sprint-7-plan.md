@@ -1,8 +1,12 @@
 # Sprint 7 — Frontend, Predictions & Deployment
 
 **Depends on:** Sprint 6 completed (backend API documented and running)
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (Started 2026-03-14)
 **Goal:** Build the complete frontend using Sprint 6's API contract, add prediction and historical features, and deploy to production.
+
+**Deployment target:** Hetzner VPS (Docker container)
+**Frontend structure:** backend/templates/ + backend/static/ (co-located with FastAPI)
+**Chart.js scope:** Basic line charts (zoom/pan/multi-team overlay deferred to M4.5)
 
 ---
 

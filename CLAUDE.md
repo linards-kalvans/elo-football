@@ -6,14 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Elo rating system for European football clubs. The ultimate goal is a **web application** providing current and historical Elo ratings, plus match win-probability predictions.
 
-The project has completed the **cross-league calibration phase** — a unified Elo engine rates 300 teams across 5 domestic leagues + CL/EL/Conference League (20,833 matches). Next: data pipeline & persistence (Sprint 5).
+The project has completed **Sprints 1-6** — a unified Elo engine rates 300 teams across 5 domestic leagues + CL/EL/Conference League (20,833 matches), with a fully documented FastAPI backend providing REST API access to all data. Next: Frontend implementation (Sprint 7).
+
+## Understanding the code
+To read / understand the code, always use the CodeGraphContext MCP server first.
 
 ## Commands
 
 ```bash
 uv sync                          # Install dependencies
 uv run python <script>           # Run any script
-uv run pytest tests/ -v          # Run tests (89 passing)
+uv run pytest tests/ -v          # Run tests (153 passing)
+uv run uvicorn backend.main:app --reload  # Start FastAPI backend (port 8000)
 cd data && bash fetch_epl_csvs.sh  # Fetch raw match data
 ```
 
@@ -21,11 +25,12 @@ cd data && bash fetch_epl_csvs.sh  # Fetch raw match data
 
 - **`src/`** — Core library: Elo engine, configuration, data ingestion, team name normalization
 - **`notebooks/`** — Analysis scripts, parameter sweeps, outputs
-- **`tests/`** — Unit tests (pytest, 89 tests)
+- **`tests/`** — Unit tests (pytest, 153 tests)
 - **`data/`** — Raw match CSVs (Football-Data.co.uk) + European data (openfootball .txt files)
 - **`docs/`** — Sprint plans, experiment logs, project spec
-- **`backend/`** - Backend app
-- **`frontend/`** - Frontend app
+- **`backend/`** — FastAPI REST API (8 endpoints, OpenAPI docs)
+  - `templates/` — Jinja2 templates for frontend pages
+  - `static/` — CSS, JS, images (Tailwind CDN, HTMX, Alpine.js, Chart.js)
 
 ## Architecture
 
@@ -47,6 +52,8 @@ cd data && bash fetch_epl_csvs.sh  # Fetch raw match data
 
 - **Tier weight optimization**: Current tier weights are hand-picked, not optimized via sweep.
 - **Two-leg tie modeling**: Knockout ties treated as independent matches (see M7 in milestones).
+- **Chart.js advanced features**: Current implementation uses basic charts; future enhancements include zoom/pan, multi-team overlay, date range selection.
+- **Pydantic deprecation warnings**: 54 warnings in backend/models.py (tracked in Sprint 8).
 
 ## Sprints & Roadmap
 
@@ -54,7 +61,10 @@ Sprint plans with detailed scope and status are in `docs/sprint-{N}-plan.md`. Hi
 
 - Sprints 1–3: COMPLETED (algorithm, multi-league, parameter tuning)
 - Sprint 4: COMPLETED (European data, cross-league calibration)
-- Sprint 5: NEXT (data pipeline & persistence)
+- Sprint 5: COMPLETED (data pipeline & persistence, SQLite database)
+- Sprint 6: COMPLETED (FastAPI backend, API documentation)
+- Sprint 7: IN PROGRESS (Frontend with HTMX + Alpine.js + Chart.js, deployment to Hetzner VPS)
+- Sprint 8: PLANNED (Technical debt: Pydantic warnings, tier weight optimization, test coverage)
 
 ## Roles
 
