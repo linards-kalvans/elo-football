@@ -19,6 +19,10 @@ class EloSettings(BaseSettings):
     mov_autocorr_coeff: float = 2.2
     mov_autocorr_scale: float = 0.001
 
+    # Display boundary: ratings are computed from earlier data but only
+    # shown from this date onward (warm-up period before this is hidden)
+    display_from_date: str = "2016-08-01"
+
     # Competition tier K multipliers (applied on top of base k_factor)
     # Tier 1: CL knockout, Tier 2: CL group/league, Tier 3: EL knockout,
     # Tier 4: EL group + Conference League, Tier 5: domestic
@@ -31,6 +35,7 @@ class EloSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="ELO_",
+        extra="ignore",
     )
 
     def tier_weight(self, tier: int) -> float:

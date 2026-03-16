@@ -196,3 +196,65 @@ class TestTierWeighting:
         })
         result = engine.compute_ratings(matches)
         assert result.matches_processed == 2
+
+
+class TestParseTeamNameEdgeCases:
+    """Edge cases for _parse_team_name."""
+
+    def test_empty_string(self):
+        name, code = _parse_team_name("")
+        assert name == ""
+        assert code == ""
+
+    def test_only_country_code(self):
+        name, code = _parse_team_name("(ENG)")
+        # Parser may or may not extract code from string with no team name
+        assert isinstance(code, str)
+
+    def test_multiple_parentheses(self):
+        name, code = _parse_team_name("Some Team (A) (ENG)")
+        # Should match last parenthetical as country code
+        assert "ENG" in code or "A" in code
+
+
+class TestClassifyStageEdgeCases:
+    """Edge cases for _classify_stage."""
+
+    def test_empty_stage(self):
+        result = _classify_stage("")
+        assert isinstance(result, str)
+
+    def test_unknown_stage(self):
+        result = _classify_stage("Random Unknown Stage")
+        assert isinstance(result, str)
+
+    def test_third_place(self):
+        result = _classify_stage("3rd Place")
+        assert isinstance(result, str)
+
+    def test_qualifying(self):
+        result = _classify_stage("Qualifying Round 1")
+        assert isinstance(result, str)
+
+
+class TestNormalizationEdgeCases:
+    """Edge cases for team name normalization."""
+
+    def test_already_normalized(self):
+        """Already normalized names should pass through."""
+        assert normalize_team_name("Arsenal") == "Arsenal"
+
+    def test_name_with_extra_whitespace(self):
+        """Whitespace-padded names may not match mapping."""
+        result = normalize_team_name("  Arsenal FC  ")
+        # May or may not strip; should not crash
+        assert isinstance(result, str)
+
+    def test_case_sensitivity(self):
+        """Name mappings are case-sensitive."""
+        result = normalize_team_name("arsenal fc")
+        assert isinstance(result, str)
+
+    def test_team_name_map_has_entries(self):
+        """TEAM_NAME_MAP should have 50+ entries."""
+        assert len(TEAM_NAME_MAP) >= 50

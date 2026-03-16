@@ -76,11 +76,11 @@ def test_load_epl_dates_parsed():
     assert pd.api.types.is_datetime64_any_dtype(df["Date"]), "Date column should be datetime"
     assert df["Date"].notna().all(), "Date column should not contain NaN"
 
-    # Check dates are in reasonable range (2016-2026)
+    # Check dates are in reasonable range (2010-2026)
     min_year = df["Date"].dt.year.min()
     max_year = df["Date"].dt.year.max()
-    assert 2016 <= min_year <= 2026, f"Min year {min_year} out of expected range"
-    assert 2016 <= max_year <= 2026, f"Max year {max_year} out of expected range"
+    assert 2010 <= min_year <= 2026, f"Min year {min_year} out of expected range"
+    assert 2010 <= max_year <= 2026, f"Max year {max_year} out of expected range"
 
 
 def test_load_epl_ftr_values():

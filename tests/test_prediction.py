@@ -80,3 +80,49 @@ class TestPredictMatch:
         """Even with home advantage, a much stronger away team can be favored."""
         result = predict_match("Burnley", "Bayern Munich", sample_ratings)
         assert result["p_away"] > result["p_home"]
+
+    def test_custom_settings(self, sample_ratings):
+        """Prediction with custom settings should work."""
+        from src.config import EloSettings
+        settings = EloSettings(home_advantage=0.0)
+        result = predict_match("Arsenal", "Chelsea", sample_ratings, settings=settings)
+        assert abs(result["p_home"] + result["p_draw"] + result["p_away"] - 1.0) < 0.01
+
+    def test_identical_ratings(self):
+        """Equal-rated teams with home advantage."""
+        ratings = {"A": 1500.0, "B": 1500.0}
+        result = predict_match("A", "B", ratings)
+        assert result["rating_diff"] == 0.0
+        assert result["p_home"] > result["p_away"]  # home advantage
+
+
+class TestPredictProbsEdgeCases:
+    """Edge cases for predict_probs."""
+
+    def test_e_home_zero(self):
+        """e_home=0 should give all probability to away."""
+        p_h, p_d, p_a = predict_probs(0.0)
+        assert p_h == pytest.approx(0.0, abs=0.01)
+        assert p_a > 0.5
+        assert abs(p_h + p_d + p_a - 1.0) < 0.001
+
+    def test_e_home_one(self):
+        """e_home=1 should give all probability to home."""
+        p_h, p_d, p_a = predict_probs(1.0)
+        assert p_a == pytest.approx(0.0, abs=0.01)
+        assert p_h > 0.5
+        assert abs(p_h + p_d + p_a - 1.0) < 0.001
+
+    def test_draw_never_negative(self):
+        """Draw probability should never be negative."""
+        for e in [0.0, 0.1, 0.5, 0.9, 1.0]:
+            _, p_d, _ = predict_probs(e)
+            assert p_d >= 0
+
+    def test_all_probs_non_negative(self):
+        """All probabilities should be non-negative."""
+        for e in [0.0, 0.01, 0.5, 0.99, 1.0]:
+            p_h, p_d, p_a = predict_probs(e)
+            assert p_h >= 0
+            assert p_d >= 0
+            assert p_a >= 0

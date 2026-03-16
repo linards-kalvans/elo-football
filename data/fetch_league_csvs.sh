@@ -4,7 +4,7 @@
 set -uo pipefail
 
 BASE_URL="https://www.football-data.co.uk/mmz4281"
-SEASONS=(1617 1718 1819 1920 2021 2122 2223 2324 2425 2526)
+SEASONS=(1011 1112 1213 1314 1415 1516 1617 1718 1819 1920 2021 2122 2223 2324 2425 2526)
 
 # League configuration: key|code|dirname
 declare -A LEAGUES=(

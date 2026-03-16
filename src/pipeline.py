@@ -270,5 +270,240 @@ def run_pipeline(db_path: str | Path | None = None,
     return summary
 
 
+def run_incremental_update(db_path: str | Path | None = None,
+                           new_matches_df: pd.DataFrame | None = None,
+                           skip_validation: bool = False) -> dict:
+    """Incrementally ingest new matches without wiping the database.
+
+    Accepts a DataFrame of new matches, appends them (skipping duplicates),
+    then does a full rating recompute for consistency. Does NOT delete
+    existing match data before inserting.
+
+    The DataFrame must have columns:
+        Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, Season, League,
+        Competition, Tier
+
+    Args:
+        db_path: Path to SQLite database. Defaults to data/elo.db.
+        new_matches_df: DataFrame of new matches to ingest. If None,
+            loads all source data and lets the UNIQUE constraint skip
+            already-ingested matches.
+        skip_validation: Skip validation step.
+
+    Returns:
+        Summary dict with counts.
+    """
+    print("=" * 60)
+    print("ELO INCREMENTAL UPDATE")
+    print("=" * 60)
+
+    resolved_path = get_db_path(db_path)
+    if not resolved_path.exists():
+        print("No existing database — falling back to full pipeline.")
+        return run_pipeline(db_path=db_path, skip_validation=skip_validation)
+
+    conn = init_db(db_path)
+    print(f"\nExisting database: {resolved_path}")
+    print(f"  Current matches: {get_match_count(conn)}")
+    print(f"  Current teams:   {get_team_count(conn)}")
+    print(f"  Latest match:    {get_latest_match_date(conn)}")
+
+    # If no explicit DataFrame supplied, load all sources (duplicates are
+    # skipped by the UNIQUE constraint, so only truly new rows get added).
+    if new_matches_df is None:
+        print("\nNo explicit DataFrame — loading all source data...")
+        all_leagues = load_all_leagues(verbose=False)
+        domestic_dfs = []
+        for _, df in all_leagues.items():
+            df = df.copy()
+            df["Tier"] = 5
+            df["Competition"] = df["League"]
+            domestic_dfs.append(df)
+        domestic = pd.concat(domestic_dfs, ignore_index=True)
+
+        european = load_european_data(verbose=False)
+        if not european.empty:
+            european["League"] = european["Competition"]
+
+        shared_cols = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR",
+                       "Season", "League", "Competition", "Tier"]
+        parts = [domestic[shared_cols]]
+        if not european.empty:
+            parts.append(european[shared_cols])
+        new_matches_df = pd.concat(parts, ignore_index=True)
+        new_matches_df = new_matches_df.sort_values("Date").reset_index(drop=True)
+
+    print(f"  Matches in update batch: {len(new_matches_df)}")
+
+    # --- Ensure all teams and competitions exist ---
+    comp_ids: dict[str, int] = {}
+    for config in LEAGUE_CONFIG.values():
+        comp_ids[config["name"]] = insert_competition(
+            conn, config["name"], tier=5, country=config["country"]
+        )
+
+    eu_tiers: dict[str, int] = {}
+    for (comp_key, _), tier in STAGE_TIER.items():
+        comp_name = COMPETITION_FILES[comp_key]
+        if comp_name not in eu_tiers or tier < eu_tiers[comp_name]:
+            eu_tiers[comp_name] = tier
+    for comp_name, tier in eu_tiers.items():
+        comp_ids[comp_name] = insert_competition(
+            conn, comp_name, tier=tier, country="Europe"
+        )
+
+    # Determine team countries from competitions
+    team_countries: dict[str, str] = {}
+    for config in LEAGUE_CONFIG.values():
+        mask = new_matches_df["Competition"] == config["name"]
+        for team in pd.concat([
+            new_matches_df.loc[mask, "HomeTeam"],
+            new_matches_df.loc[mask, "AwayTeam"],
+        ]).unique():
+            team_countries[team] = config["country"]
+
+    all_teams = (set(new_matches_df["HomeTeam"].unique())
+                 | set(new_matches_df["AwayTeam"].unique()))
+    team_ids: dict[str, int] = {}
+    for name in sorted(all_teams):
+        team_ids[name] = insert_team(conn, name,
+                                     country=team_countries.get(name, ""))
+    conn.commit()
+
+    # --- Insert new matches (duplicates skipped by UNIQUE constraint) ---
+    print("\nInserting new matches...")
+    new_matches = 0
+    duplicates = 0
+
+    for _, row in new_matches_df.iterrows():
+        comp_id = comp_ids.get(row["Competition"])
+        if comp_id is None:
+            continue
+
+        date_str = pd.Timestamp(row["Date"]).strftime("%Y-%m-%d")
+        match_id = insert_match(
+            conn,
+            date=date_str,
+            home_team_id=team_ids[row["HomeTeam"]],
+            away_team_id=team_ids[row["AwayTeam"]],
+            home_goals=int(row["FTHG"]),
+            away_goals=int(row["FTAG"]),
+            result=row["FTR"],
+            competition_id=comp_id,
+            season=row["Season"],
+        )
+        if match_id is not None:
+            new_matches += 1
+        else:
+            duplicates += 1
+
+    conn.commit()
+    print(f"  New matches: {new_matches}")
+    print(f"  Duplicates skipped: {duplicates}")
+
+    if new_matches > 0:
+        # --- Full recompute of ratings ---
+        print("\nRecomputing all Elo ratings...")
+        conn.execute("DELETE FROM ratings_history")
+        conn.commit()
+
+        all_match_rows = conn.execute(
+            """SELECT m.id, m.date, m.home_team_id, m.away_team_id,
+                      m.home_goals, m.away_goals, m.result, m.season,
+                      c.tier,
+                      th.name as home_name, ta.name as away_name
+               FROM matches m
+               JOIN competitions c ON c.id = m.competition_id
+               JOIN teams th ON th.id = m.home_team_id
+               JOIN teams ta ON ta.id = m.away_team_id
+               ORDER BY m.date ASC, m.id ASC"""
+        ).fetchall()
+
+        settings = EloSettings()
+        engine = EloEngine(settings)
+        elo: dict[str, float] = {}
+        last_match_date: dict[str, pd.Timestamp] = {}
+        rating_rows: list[tuple[int, int, str, float, float]] = []
+        first_season = all_match_rows[0]["season"] if all_match_rows else ""
+
+        for mrow in all_match_rows:
+            home = mrow["home_name"]
+            away = mrow["away_name"]
+            date = pd.Timestamp(mrow["date"])
+            season = mrow["season"]
+            tier = mrow["tier"]
+
+            for team in (home, away):
+                if team not in elo:
+                    init = (settings.initial_elo if season == first_season
+                            else settings.promoted_elo)
+                    elo[team] = init
+
+            engine.apply_time_decay(home, date, elo, last_match_date)
+            engine.apply_time_decay(away, date, elo, last_match_date)
+
+            new_h, new_a, dh, da = engine.elo_update(
+                elo[home], elo[away], mrow["result"],
+                mrow["home_goals"], mrow["away_goals"], tier
+            )
+            elo[home] = new_h
+            elo[away] = new_a
+            last_match_date[home] = date
+            last_match_date[away] = date
+
+            date_str = mrow["date"]
+            rating_rows.append((mrow["home_team_id"], mrow["id"], date_str, new_h, dh))
+            rating_rows.append((mrow["away_team_id"], mrow["id"], date_str, new_a, da))
+
+        conn.executemany(
+            """INSERT INTO ratings_history
+               (team_id, match_id, date, rating, rating_delta)
+               VALUES (?, ?, ?, ?, ?)""",
+            rating_rows,
+        )
+
+        insert_parameters(
+            conn,
+            k_factor=settings.k_factor,
+            home_advantage=settings.home_advantage,
+            decay_rate=settings.decay_rate,
+            promoted_elo=settings.promoted_elo,
+            spread=settings.spread,
+            matches_processed=len(all_match_rows),
+        )
+        conn.commit()
+        print(f"  {len(rating_rows)} rating entries written")
+    else:
+        print("\nNo new matches — ratings unchanged.")
+
+    # --- Validation ---
+    if not skip_validation:
+        print("\nRunning validation...")
+        issues = validate_database(conn)
+        if issues:
+            print(f"  WARNING: {len(issues)} validation issue(s):")
+            for issue in issues:
+                print(f"    - {issue}")
+        else:
+            print("  All checks passed.")
+
+    summary = {
+        "new_matches": new_matches,
+        "duplicates": duplicates,
+        "total_matches": get_match_count(conn),
+        "total_teams": get_team_count(conn),
+        "latest_date": get_latest_match_date(conn),
+    }
+
+    print(f"\n{'=' * 60}")
+    print("INCREMENTAL UPDATE COMPLETE")
+    print(f"{'=' * 60}")
+    for k, v in summary.items():
+        print(f"  {k}: {v}")
+
+    conn.close()
+    return summary
+
+
 if __name__ == "__main__":
     run_pipeline()

@@ -1,0 +1,16 @@
+.venv
+.git
+.github
+.pytest_cache
+__pycache__
+*.pyc
+notebooks/
+docs/
+tests/
+.claude/
+.env
+.env.example
+*.md
+.codegraphcontext
+.ruff_cache
+data/

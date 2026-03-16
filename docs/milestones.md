@@ -1,6 +1,6 @@
 # Milestone Plan
 
-> Last updated: 2026-03-13
+> Last updated: 2026-03-15
 
 High-level roadmap for the European Football Elo Rating project. Each milestone maps to one or more sprints with detailed plans in `docs/sprint-<N>-plan.md`.
 
@@ -63,7 +63,7 @@ Move from ad-hoc scripts to a production-grade pipeline with persistent storage 
 
 **Key deliverables:**
 - **Storage engine ADR** (`docs/adr-storage-engine.md`) — SQLite chosen for operational simplicity
-- Database schema with 5 tables: teams, competitions, matches, ratings_history, parameters
+- Database schema with 7 tables: teams, competitions, matches, ratings_history, parameters, fixtures, predictions
 - Automated fetch → ingest → rate → persist pipeline (idempotent, logged)
 - Match prediction Python API (`predict_match()`, `predict_match_from_db()`)
 - Data validation and monitoring (schema drift, completeness, duplicates)
@@ -73,7 +73,7 @@ Move from ad-hoc scripts to a production-grade pipeline with persistent storage 
 - `src/db/` module: connection, schema, repository, seed, validation
 - `src/pipeline.py`: idempotent pipeline with duplicate detection
 - `src/prediction.py`: match prediction API with database integration
-- Comprehensive test coverage (89 tests passing)
+- Fixtures & predictions tables added in Sprint 9
 
 **Exit criteria:**
 - [x] Storage engine ADR written and decision made
@@ -85,65 +85,60 @@ Move from ad-hoc scripts to a production-grade pipeline with persistent storage 
 
 ## M4: Web Application
 
-**Sprints:** [6](sprint-6-plan.md)–[7](sprint-7-plan.md) | **Status:** IN PROGRESS
+**Sprints:** [6](sprint-6-plan.md)–[8](sprint-8-plan.md) | **Status:** COMPLETED
 
 Ship the user-facing web application — the project's ultimate deliverable.
 
 **Key deliverables:**
-- **Frontend tooling ADR** (`docs/adr-frontend-tooling.md`) — HTMX + Alpine.js + Chart.js + Tailwind CSS ✅
-- FastAPI backend with rankings, team detail, prediction, and search endpoints ✅
-- **Comprehensive API documentation** — contract doc, example responses, OpenAPI spec ✅
-- Interactive frontend: rankings table, Elo trajectory charts, team detail pages (IN PROGRESS)
+- **Frontend tooling ADR** (`docs/adr-frontend-tooling.md`) — Alpine.js + ApexCharts + Tailwind CSS
+- FastAPI backend with rankings, team detail, prediction, and search endpoints
+- **Comprehensive API documentation** — contract doc, example responses, OpenAPI spec
+- Interactive frontend: rankings table, Elo trajectory charts, team detail pages
+- **Multi-team comparison chart** — compare up to 10 teams on one chart, league/competition presets
 - Match prediction widget (select two teams → win/draw/loss probabilities)
 - Historical date explorer (date picker → ratings at any past date)
 - Deployment: Docker, CI/CD to Hetzner VPS
 
-**Key decisions:**
-- Frontend tooling: HTMX + Alpine.js + Chart.js (Sprint 6 ADR) ✅
-- Frontend structure: backend/templates/ + backend/static/ (co-located with FastAPI) ✅
-- Hosting: Hetzner VPS with Docker container ✅
-- Deployment: GitHub Actions CI/CD ✅
-- Chart.js scope: Start simple (basic line charts), defer advanced features (zoom/pan, multi-team overlay) to future enhancement
-
 | Sprint | Focus | Status |
 |--------|-------|--------|
-| [Sprint 6](sprint-6-plan.md) | Frontend ADR, FastAPI backend, API documentation, database integration | COMPLETED ✅ |
-| [Sprint 7](sprint-7-plan.md) | Frontend (rankings, team detail, charts), predictions, historical explorer, deployment | IN PROGRESS 🚧 |
+| [Sprint 6](sprint-6-plan.md) | Frontend ADR, FastAPI backend, API documentation, database integration | COMPLETED |
+| [Sprint 7](sprint-7-plan.md) | Frontend (rankings, team detail, charts), predictions, historical explorer | COMPLETED |
+| [Sprint 8](sprint-8-plan.md) | Prediction page, chart optimization, team stats, Docker/CI, Pydantic fixes | COMPLETED |
 
-**Exit criteria:**
-- [ ] Web app deployed to Hetzner VPS and publicly accessible
-- [ ] Rankings, team detail, predictions, and historical queries all working
+**Exit criteria (M4 complete):**
+- [x] Web app deployed to Hetzner VPS and publicly accessible
+- [x] Rankings, team detail, predictions, and historical queries all working
 - [x] API fully documented with contract doc and example responses
-- [ ] Responsive on mobile and desktop
-- [ ] CI/CD pipeline: lint → test → build → deploy
+- [x] Responsive on mobile and desktop
+- [x] CI/CD pipeline: lint → test → build → deploy
+- [x] Rich team profile pages with stats card and Elo-enriched results
+- [x] Smooth chart interactions (updateSeries instead of destroy/recreate)
 
 ---
 
-## M4.5: Chart.js Enhancements
+## M4.5: Advanced Chart Features & Export
 
-**Sprints:** TBD | **Status:** NOT STARTED
+**Sprints:** TBD | **Status:** PARTIALLY COMPLETE
 
-Enhance the Chart.js visualizations with advanced interactive features deferred from Sprint 7.
+Further enhance ApexCharts visualizations with export and preset features deferred from Sprints 7-8.
 
-**Scope:**
-- **Zoom and pan**: Allow users to zoom into specific time periods and pan across the full timeline
-- **Multi-team overlay**: Compare multiple teams on a single chart (different colored lines)
-- **Date range selection**: Interactive date range picker to filter chart data
+**Completed (in Sprints 7-8):**
+- ~~Zoom and pan~~: ApexCharts native zoom/pan (Sprint 7)
+- ~~Date range selection~~: noUiSlider double-ended slider (Sprint 7)
+- ~~Multi-team overlay~~: Up to 10 teams on one chart (Sprint 7)
+- ~~Chart performance optimization~~: updateSeries instead of destroy/recreate (Sprint 8)
+
+**Remaining scope:**
 - **Export functionality**: Download chart as PNG or CSV
-- **Performance optimization**: Lazy loading for teams with >1000 matches
+- **Chart presets**: Quick filters (e.g., "Last season", "All time", "CL campaigns only")
+- **Comparison snapshots**: Save and share chart configurations
 
-**Depends on:** M4 (Sprint 7 frontend complete)
-
-**Key questions:**
-- Use Chart.js zoom plugin or custom implementation?
-- How many teams can overlay before performance degrades?
-- Should we add chart presets (e.g., "Last season", "All time", "CL campaigns only")?
+**Depends on:** M4 (complete)
 
 **Exit criteria:**
-- [ ] Zoom/pan working smoothly on desktop and mobile
-- [ ] Multi-team overlay supports at least 5 teams simultaneously
-- [ ] Date range picker integrated with chart updates
-- [ ] Chart performance acceptable with 2000+ data points
+- [ ] Export chart as PNG, SVG, and CSV
+- [ ] Chart presets for common time ranges
+- [ ] Shareable chart configurations (URL-encoded or saved to DB)
 
 ---
 
@@ -247,23 +242,192 @@ Decide how the Elo engine treats two-leg playoff ties (home and away) that appea
 
 ---
 
+## M8: Live Data & Fixtures
+
+**Sprints:** [10](sprint-10-plan.md)–11 | **Status:** IN PROGRESS | **Priority:** HIGH
+
+Transition from historical-only data to quasi-live updates with upcoming fixtures and completed match results.
+
+**Groundwork completed (Sprint 9):**
+- ADR-004: football-data.org selected as live data source (`docs/adr-004-live-data-source.md`)
+- Database schema: fixtures & predictions tables with CRUD functions
+- 2010-2016 warm-up period for calibration (display_from_date filtering)
+
+**Remaining scope:**
+
+### 8a. Data Persistence & Deployment Strategy (Sprint 10, prerequisite)
+- **DB as persistent state**: Remove `elo.db` from git, treat as volume-mounted persistent data
+- **Schema migrations**: Numbered migration system so schema changes apply without data loss
+- **Seed vs. incremental separation**: `run_pipeline()` for cold-start only; incremental ingestion thereafter
+- **DB backup on deploy**: Snapshot database before each deployment for rollback
+- **Incremental ratings**: Avoid full `DELETE FROM ratings_history` recompute on every update
+
+### 8b. Data Source Integration (Sprint 10)
+- **football-data.org API client**: Async client with rate limiting (10 calls/min), auth, error handling
+- **Team ID mapping**: Map API team IDs to existing 325 teams
+- **Recent results API**: Fetch completed match results for rating updates
+- **Data freshness policy**: 2x daily scheduled fetch (6am, 6pm)
+
+### 8c. Pipeline Automation (Sprint 10-11)
+- **Scheduled fetch**: systemd timer or cron for automated ingestion
+- **Incremental rating updates**: Only recompute ratings for new matches, not full history
+- **Match result validation**: Confirm match is final (not abandoned, not postponed)
+
+### 8d. Fixtures Frontend (Sprint 10-11)
+- **Fixtures page**: Upcoming matches with pre-match Elo predictions
+- **Grouped by competition**: Sorted by date, linked to team pages
+
+**Exit criteria:**
+- [ ] Database survives deployments without data loss
+- [ ] Schema migrations apply cleanly on existing databases
+- [ ] Upcoming fixtures fetched and displayed in frontend
+- [ ] Completed matches auto-ingested within 24 hours
+- [ ] Ratings updated automatically after new results
+- [ ] API rate limits and costs acceptable for production
+
+---
+
+## M9: Prediction Tracking & Validation
+
+**Sprints:** TBD (11+) | **Status:** PARTIALLY COMPLETE | **Priority:** MEDIUM
+
+Track predictions made by the system and compare them to actual outcomes, enabling performance monitoring and user transparency.
+
+**Completed (Sprint 9):**
+- Predictions table with CRUD functions (insert_prediction, get_predictions_for_fixture)
+- CHECK constraint ensuring exactly one of match_id/fixture_id is set
+
+**Remaining scope:**
+
+### 9a. Prediction Automation
+- Auto-insert predictions for upcoming fixtures when fetched
+- After match completes: compare prediction vs result, compute Brier score
+- Prediction versioning if match rescheduled
+
+### 9b. Performance Metrics
+- **Accuracy tracking**: Log-loss, Brier score, accuracy over rolling windows
+- **Calibration curves**: Are 60% predictions actually 60% accurate?
+- **Dashboard**: Show model performance over time (last week, month, season)
+- **Alerts**: Flag if model performance degrades below threshold
+
+### 9c. User-Facing Features
+- **Prediction history page**: "Here's what we predicted for last weekend's matches"
+- **Accuracy badge**: Display model's recent accuracy on prediction widget
+- **Confidence intervals**: Show uncertainty around predictions
+
+**Depends on:** M8 (live data for actual outcomes), M4 (frontend to display)
+
+**Exit criteria:**
+- [ ] All predictions stored in database before matches
+- [ ] Prediction accuracy dashboard live
+- [ ] Users can view prediction history and outcomes
+- [ ] Brier score and log-loss tracked over time
+
+---
+
+## M10: Initial Elo Calibration Fix
+
+**Sprint:** [9](sprint-9-plan.md) | **Status:** COMPLETED
+
+Fix the issue where all teams at the start of the dataset are initialized to the same rating instead of contextually appropriate ratings.
+
+**Approach chosen:** Warm-up period
+
+**Key results (Sprint 9):**
+- Extended data ingestion back to 2010 (6 extra seasons × 5 leagues = 30 CSV files)
+- Added `display_from_date` to EloSettings (default "2016-08-01", env-configurable)
+- Seasons 2010-2016 serve as warm-up — ratings computed but hidden from public display
+- API endpoints filter by display_from_date (team history, peak/trough stats)
+- Validation: Aug 2016 starting ratings — Barcelona 1813, Real Madrid 1805, Bayern 1801
+- 31,789 total matches (up from 20,833), 325 teams, 63,578 rating entries
+
+**Exit criteria:**
+- [x] Historical data back to 2010 ingested
+- [x] Warm-up period runs before public display window
+- [x] 2016 starting ratings validated against reasonable expectations
+- [x] `display_from_date` implemented and filtering all API endpoints
+- [x] No team starts at exactly 1500 unless genuinely unknown
+
+---
+
+## M11: UI Redesign
+
+**Sprints:** TBD (12) | **Status:** NOT STARTED | **Priority:** MEDIUM
+
+Redesign the frontend based on user-provided mock designs. May require new features and components depending on the design vision.
+
+**Scope:**
+- Implement UI from provided mock designs (Figma, screenshots, or similar)
+- Visual identity refresh (colors, typography, layout, spacing)
+- Improved mobile experience and responsive design
+- New pages or components as required by the designs
+- Potential new features driven by the redesign (TBD based on mocks)
+
+**Depends on:** M4 (current web app as baseline), mock designs provided by stakeholder
+
+**Key questions (to resolve when mocks are provided):**
+- Does the redesign require new API endpoints or data?
+- Are there new pages/features beyond restyling existing ones?
+- Should we adopt a component library or design system?
+- Does the redesign affect the tech stack (e.g., move from Tailwind CDN to built CSS)?
+
+**Exit criteria:**
+- [ ] All pages match provided mock designs
+- [ ] Responsive on mobile, tablet, and desktop
+- [ ] Any new features required by the designs are functional
+- [ ] Existing functionality preserved (no regressions)
+- [ ] Accessibility basics (contrast, keyboard nav, semantic HTML)
+
+---
+
+## Sprint Roadmap
+
+| Sprint | Milestones | Focus | Status |
+|--------|-----------|-------|--------|
+| 1–3 | M1 | Algorithm, multi-league, parameter tuning | COMPLETED |
+| 4 | M2 | Cross-league calibration, European data | COMPLETED |
+| 5 | M3 | Data pipeline, SQLite, persistence | COMPLETED |
+| 6 | M4 | FastAPI backend, API documentation | COMPLETED |
+| 7 | M4, M4.5 (partial) | Frontend, charts, comparison, zoom/pan | COMPLETED |
+| 8 | M4 | Prediction page, Docker/CI, chart perf | COMPLETED |
+| 9 | M10, M8 (groundwork), M9 (groundwork) | Calibration fix, fixtures/predictions schema, ADR-004 | COMPLETED |
+| **10** | **M8** | **Data persistence strategy, live API client, ingestion pipeline, fixtures page** | **PLANNED** |
+| **11** | **M8, M9** | **Prediction tracking, accuracy dashboard, scheduled automation** | **PLANNED** |
+| **12** | **M11** | **UI redesign from mock designs** | **PLANNED** |
+| **13** | **M4.5** | **Chart export (PNG/CSV), presets, shareable configs** | **PLANNED** |
+| **14** | **M5** | **Bayesian parameter optimization (Optuna), tier weight sweep** | **PLANNED** |
+| **15** | **M7** | **Two-leg tie analysis & modeling** | **PLANNED** |
+| **16–17** | **M6** | **Full UEFA league expansion (data sourcing + frontend)** | **PLANNED** |
+
+---
+
 ## Dependencies Graph
 
 ```
-M1 (Algorithm)
- └──▶ M2 (Cross-League Calibration)
-       └──▶ M3 (Pipeline & Persistence)
-       │     └──▶ M4 (Web Application)
-       │           ├── Sprint 6: Backend + Frontend Foundation
-       │           └── Sprint 7: Predictions, History, Deploy
+M1 (Algorithm) ✅
+ └──▶ M2 (Cross-League Calibration) ✅
+       └──▶ M3 (Pipeline & Persistence) ✅
+       │     ├──▶ M4 (Web Application) ✅
+       │     │     ├── Sprint 6: Backend + API docs ✅
+       │     │     ├── Sprint 7: Frontend + charts ✅
+       │     │     └── Sprint 8: Predictions, Docker, CI/CD ✅
+       │     │           ├──▶ M4.5 (Advanced Chart Features) [PARTIAL]
+       │     │           └──▶ M11 (UI Redesign) [PLANNED]
+       │     │
+       │     ├──▶ M10 (Elo Calibration Fix) ✅ [Sprint 9]
+       │     │
+       │     ├──▶ M8 (Live Data & Fixtures) [IN PROGRESS]
+       │     │     ├── Sprint 9: Groundwork (ADR-004, fixtures/predictions tables) ✅
+       │     │     ├── Sprint 10: Persistence, API client, ingestion [PLANNED]
+       │     │     └── Sprint 11: Automation, fixtures frontend [PLANNED]
+       │     │           └──▶ M9 (Prediction Tracking) [PARTIAL → Sprint 11]
+       │     │
+       │     └──▶ M5 (Advanced Parameter Optimization) [Sprint 14]
        │
-       ├──▶ M5 (Advanced Parameter Optimization)
-       │     [depends on M1 + M3]
-       │
-       ├──▶ M6 (Full UEFA League Coverage)
+       ├──▶ M6 (Full UEFA League Coverage) [Sprints 16-17]
        │     [depends on M2 + M3 + M4]
        │
-       └──▶ M7 (Two-Leg Tie Modeling)
+       └──▶ M7 (Two-Leg Tie Modeling) [Sprint 15]
              [depends on M2]
 ```
 
@@ -271,13 +435,16 @@ M1 (Algorithm)
 
 | ADR | Milestone | Status | Document |
 |-----|-----------|--------|----------|
-| Storage engine (SQLite / Postgres / DuckDB / Parquet) | M3 | PENDING | `docs/adr-storage-engine.md` |
-| Frontend tooling (HTMX / Alpine / SPA / charting lib) | M4 | PENDING | `docs/adr-frontend-tooling.md` |
-| European cup data source | M2 | DECIDED | openfootball (CC0, 15 seasons CL) |
-| Competition tier weight values | M2 | DECIDED | T1=1.5x, T2=1.2x, T3=1.2x, T4/T5=1.0x |
-| Optimization framework (Optuna / scikit-optimize / custom) | M5 | PENDING | — |
+| Storage engine | M3 | ✅ DECIDED | `docs/adr-storage-engine.md` — SQLite |
+| Frontend tooling | M4 | ✅ DECIDED | `docs/adr-frontend-tooling.md` — Alpine.js + ApexCharts + Tailwind CSS |
+| European cup data source | M2 | ✅ DECIDED | openfootball (CC0, 15 seasons CL) |
+| Competition tier weight values | M2 | ⚠️ DECIDED (needs optimization) | T1=1.5x, T2=1.2x, T3=1.2x, T4/T5=1.0x (hand-picked) |
+| Live data API source | M8 | ✅ DECIDED | `docs/adr-004-live-data-source.md` — football-data.org (free tier) |
+| Initial rating calibration method | M10 | ✅ DECIDED | Warm-up period (2010-2016), implemented in Sprint 9 |
+| **Data persistence & migrations** | **M8** | **PENDING** | **Sprint 10 Task 0 — DB as persistent state, migration system** |
+| Optimization framework | M5 | PENDING | Optuna / scikit-optimize / custom |
 | Per-league vs. global parameters | M5 | PENDING | — |
 | Full UEFA data source strategy | M6 | PENDING | — |
-| Minimum data quality threshold for league inclusion | M6 | PENDING | — |
-| Two-leg tie treatment (independent / aggregate / hybrid) | M7 | PENDING | — |
+| Minimum data quality threshold | M6 | PENDING | — |
+| Two-leg tie treatment | M7 | PENDING | Independent / aggregate / hybrid |
 | Penalty shootout Elo impact | M7 | PENDING | — |

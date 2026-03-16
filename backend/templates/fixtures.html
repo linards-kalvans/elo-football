@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Upcoming Fixtures - Football Elo Ratings{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div x-data="fixturesPage()">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">Upcoming Fixtures</h1>
+            <p class="mt-2 text-sm text-gray-500">
+                Scheduled matches with Elo-based win probability predictions
+            </p>
+        </div>
+
+        <!-- Competition Filter -->
+        <div class="mb-6">
+            <div class="flex flex-wrap gap-2">
+                <button
+                    @click="filterCompetition(null)"
+                    :class="selectedCompetition === null ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                    class="px-4 py-2 rounded-md text-sm font-medium border border-gray-300 shadow-sm transition-colors">
+                    All
+                </button>
+                <template x-for="comp in competitions" :key="comp">
+                    <button
+                        @click="filterCompetition(comp)"
+                        :class="selectedCompetition === comp ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                        class="px-4 py-2 rounded-md text-sm font-medium border border-gray-300 shadow-sm transition-colors"
+                        x-text="comp">
+                    </button>
+                </template>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="flex justify-center py-12">
+            <svg class="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="!loading && fixtures.length === 0" x-cloak class="text-center py-12">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900">No upcoming fixtures</h3>
+            <p class="mt-1 text-sm text-gray-500">Run the daily update to fetch fixtures.</p>
+        </div>
+
+        <!-- Error State -->
+        <div x-show="error" x-cloak class="rounded-md bg-red-50 p-4 mb-6">
+            <div class="flex">
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">Error loading fixtures</h3>
+                    <p class="mt-2 text-sm text-red-700" x-text="error"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fixtures grouped by date -->
+        <div x-show="!loading && fixtures.length > 0" x-cloak class="space-y-6">
+            <template x-for="group in groupedFixtures" :key="group.date">
+                <div>
+                    <!-- Date Header -->
+                    <div class="mb-3">
+                        <h2 class="text-lg font-semibold text-gray-900" x-text="formatDate(group.date)"></h2>
+                    </div>
+
+                    <!-- Fixture Cards -->
+                    <div class="space-y-3">
+                        <template x-for="fixture in group.fixtures" :key="fixture.date + fixture.home_team.id + fixture.away_team.id">
+                            <div class="bg-white shadow sm:rounded-lg overflow-hidden">
+                                <div class="px-4 py-4 sm:px-6">
+                                    <!-- Competition Badge -->
+                                    <div class="mb-3">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+                                              x-text="fixture.competition"></span>
+                                    </div>
+
+                                    <!-- Teams Row -->
+                                    <div class="grid grid-cols-7 gap-2 items-center">
+                                        <!-- Home Team -->
+                                        <div class="col-span-3 text-right">
+                                            <a :href="`/team/${fixture.home_team.id}`"
+                                               class="text-base font-semibold text-gray-900 hover:text-indigo-600 transition-colors"
+                                               x-text="fixture.home_team.name"></a>
+                                            <div x-show="fixture.prediction" class="text-sm text-gray-500 mt-1">
+                                                Elo: <span class="font-medium" x-text="fixture.prediction ? Math.round(fixture.prediction.home_elo) : ''"></span>
+                                            </div>
+                                        </div>
+
+                                        <!-- VS -->
+                                        <div class="col-span-1 text-center">
+                                            <span class="text-sm font-bold text-gray-400">vs</span>
+                                        </div>
+
+                                        <!-- Away Team -->
+                                        <div class="col-span-3 text-left">
+                                            <a :href="`/team/${fixture.away_team.id}`"
+                                               class="text-base font-semibold text-gray-900 hover:text-indigo-600 transition-colors"
+                                               x-text="fixture.away_team.name"></a>
+                                            <div x-show="fixture.prediction" class="text-sm text-gray-500 mt-1">
+                                                Elo: <span class="font-medium" x-text="fixture.prediction ? Math.round(fixture.prediction.away_elo) : ''"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Prediction Bar -->
+                                    <div x-show="fixture.prediction" class="mt-4">
+                                        <div class="flex rounded-full h-6 overflow-hidden">
+                                            <div class="bg-green-500 flex items-center justify-center transition-all duration-700"
+                                                 :style="`width: ${(fixture.prediction?.p_home || 0) * 100}%`">
+                                                <span class="text-xs font-bold text-white px-1"
+                                                      x-show="(fixture.prediction?.p_home || 0) > 0.12"
+                                                      x-text="((fixture.prediction?.p_home || 0) * 100).toFixed(0) + '%'"></span>
+                                            </div>
+                                            <div class="bg-gray-400 flex items-center justify-center transition-all duration-700"
+                                                 :style="`width: ${(fixture.prediction?.p_draw || 0) * 100}%`">
+                                                <span class="text-xs font-bold text-white px-1"
+                                                      x-show="(fixture.prediction?.p_draw || 0) > 0.12"
+                                                      x-text="((fixture.prediction?.p_draw || 0) * 100).toFixed(0) + '%'"></span>
+                                            </div>
+                                            <div class="bg-red-500 flex items-center justify-center transition-all duration-700"
+                                                 :style="`width: ${(fixture.prediction?.p_away || 0) * 100}%`">
+                                                <span class="text-xs font-bold text-white px-1"
+                                                      x-show="(fixture.prediction?.p_away || 0) > 0.12"
+                                                      x-text="((fixture.prediction?.p_away || 0) * 100).toFixed(0) + '%'"></span>
+                                            </div>
+                                        </div>
+                                        <div class="flex justify-between mt-1 text-xs text-gray-500">
+                                            <span>Home</span>
+                                            <span>Draw</span>
+                                            <span>Away</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- No prediction fallback -->
+                                    <div x-show="!fixture.prediction" class="mt-3">
+                                        <p class="text-xs text-gray-400 italic">No prediction available</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<script>
+function fixturesPage() {
+    return {
+        fixtures: [],
+        competitions: [],
+        selectedCompetition: null,
+        loading: true,
+        error: null,
+
+        async init() {
+            await this.fetchFixtures();
+        },
+
+        async fetchFixtures() {
+            this.loading = true;
+            this.error = null;
+
+            try {
+                let url = '/api/fixtures';
+                if (this.selectedCompetition) {
+                    url += `?competition=${encodeURIComponent(this.selectedCompetition)}`;
+                }
+
+                const r = await fetch(url);
+                if (!r.ok) {
+                    const errData = await r.json();
+                    throw new Error(errData.message || `HTTP ${r.status}`);
+                }
+
+                const data = await r.json();
+                this.fixtures = data.fixtures;
+
+                // Extract unique competitions (only on first load)
+                if (this.competitions.length === 0 && this.fixtures.length > 0) {
+                    const comps = new Set(this.fixtures.map(f => f.competition));
+                    this.competitions = [...comps].sort();
+                }
+            } catch (err) {
+                this.error = err.message;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async filterCompetition(comp) {
+            this.selectedCompetition = comp;
+            await this.fetchFixtures();
+        },
+
+        get groupedFixtures() {
+            const groups = {};
+            for (const f of this.fixtures) {
+                if (!groups[f.date]) {
+                    groups[f.date] = { date: f.date, fixtures: [] };
+                }
+                groups[f.date].fixtures.push(f);
+            }
+            return Object.values(groups).sort((a, b) => a.date.localeCompare(b.date));
+        },
+
+        formatDate(dateStr) {
+            const d = new Date(dateStr + 'T00:00:00');
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            return d.toLocaleDateString('en-GB', options);
+        }
+    }
+}
+</script>
+{% endblock %}

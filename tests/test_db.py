@@ -1,6 +1,7 @@
 """Tests for database module: schema, connection, repository."""
 
 import json
+import sqlite3
 
 import pytest
 
@@ -9,17 +10,22 @@ from src.db.repository import (
     get_current_rankings,
     get_latest_match_date,
     get_match_count,
+    get_predictions_for_fixture,
     get_ratings_at_date,
     get_team_by_name,
     get_team_count,
     get_team_history,
+    get_upcoming_fixtures,
     insert_competition,
+    insert_fixture,
     insert_match,
     insert_parameters,
+    insert_prediction,
     insert_rating,
     insert_ratings_batch,
     insert_team,
     search_teams,
+    update_fixture_status,
 )
 
 
@@ -222,3 +228,198 @@ class TestParameters:
         row = db.execute("SELECT * FROM parameters WHERE id = ?", (pid,)).fetchone()
         assert row["k_factor"] == 20.0
         assert row["matches_processed"] == 100
+
+
+class TestFixtures:
+    """Test fixtures table CRUD operations."""
+
+    def test_insert_fixture(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        fid = insert_fixture(db, "2026-04-01", t1, t2, c1, "2526")
+        assert fid is not None
+        assert fid > 0
+
+    def test_duplicate_fixture_returns_none(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        fid1 = insert_fixture(db, "2026-04-01", t1, t2, c1, "2526")
+        fid2 = insert_fixture(db, "2026-04-01", t1, t2, c1, "2526")
+        assert fid1 is not None
+        assert fid2 is None
+
+    def test_fixture_default_status(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        fid = insert_fixture(db, "2026-04-01", t1, t2, c1)
+        db.commit()
+        row = db.execute("SELECT status FROM fixtures WHERE id = ?", (fid,)).fetchone()
+        assert row["status"] == "scheduled"
+
+    def test_update_fixture_status(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        fid = insert_fixture(db, "2026-04-01", t1, t2, c1)
+        db.commit()
+        result = update_fixture_status(db, fid, "completed")
+        assert result is True
+        row = db.execute("SELECT status FROM fixtures WHERE id = ?", (fid,)).fetchone()
+        assert row["status"] == "completed"
+
+    def test_update_fixture_status_nonexistent(self, db):
+        result = update_fixture_status(db, 99999, "completed")
+        assert result is False
+
+    def test_fixture_invalid_status(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        fid = insert_fixture(db, "2026-04-01", t1, t2, c1)
+        db.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            update_fixture_status(db, fid, "invalid_status")
+            db.commit()
+
+    def test_get_upcoming_fixtures(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        # Insert a fixture for today + 3 days (should appear)
+        from datetime import date, timedelta
+        future_date = (date.today() + timedelta(days=3)).isoformat()
+        insert_fixture(db, future_date, t1, t2, c1, "2526")
+        db.commit()
+        upcoming = get_upcoming_fixtures(db, days_ahead=7)
+        assert len(upcoming) == 1
+        assert upcoming[0]["home_team"] == "Arsenal"
+        assert upcoming[0]["away_team"] == "Chelsea"
+
+    def test_get_upcoming_excludes_past(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        insert_fixture(db, "2020-01-01", t1, t2, c1, "1920")
+        db.commit()
+        upcoming = get_upcoming_fixtures(db, days_ahead=7)
+        assert len(upcoming) == 0
+
+    def test_get_upcoming_excludes_completed(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        from datetime import date, timedelta
+        future_date = (date.today() + timedelta(days=3)).isoformat()
+        fid = insert_fixture(db, future_date, t1, t2, c1, "2526")
+        update_fixture_status(db, fid, "completed")
+        db.commit()
+        upcoming = get_upcoming_fixtures(db, days_ahead=7)
+        assert len(upcoming) == 0
+
+    def test_fixture_with_external_api_id(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        fid = insert_fixture(db, "2026-04-01", t1, t2, c1,
+                             external_api_id="ext-12345")
+        db.commit()
+        row = db.execute("SELECT external_api_id FROM fixtures WHERE id = ?",
+                         (fid,)).fetchone()
+        assert row["external_api_id"] == "ext-12345"
+
+
+class TestPredictions:
+    """Test predictions table CRUD operations."""
+
+    def test_insert_prediction_for_fixture(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        fid = insert_fixture(db, "2026-04-01", t1, t2, c1)
+        db.commit()
+        pid = insert_prediction(db, p_home=0.45, p_draw=0.28, p_away=0.27,
+                                home_elo=1550.0, away_elo=1480.0, fixture_id=fid)
+        assert pid > 0
+
+    def test_insert_prediction_for_match(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        mid = insert_match(db, "2024-01-15", t1, t2, 2, 1, "H", c1, "2324")
+        db.commit()
+        pid = insert_prediction(db, p_home=0.50, p_draw=0.25, p_away=0.25,
+                                home_elo=1500.0, away_elo=1500.0, match_id=mid)
+        assert pid > 0
+
+    def test_prediction_requires_exactly_one_ref(self, db):
+        """Both match_id and fixture_id set should fail CHECK constraint."""
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        mid = insert_match(db, "2024-01-15", t1, t2, 2, 1, "H", c1, "2324")
+        fid = insert_fixture(db, "2026-04-01", t1, t2, c1)
+        db.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            insert_prediction(db, p_home=0.5, p_draw=0.25, p_away=0.25,
+                              home_elo=1500.0, away_elo=1500.0,
+                              match_id=mid, fixture_id=fid)
+
+    def test_prediction_requires_at_least_one_ref(self, db):
+        """Neither match_id nor fixture_id should fail CHECK constraint."""
+        with pytest.raises(sqlite3.IntegrityError):
+            insert_prediction(db, p_home=0.5, p_draw=0.25, p_away=0.25,
+                              home_elo=1500.0, away_elo=1500.0)
+
+    def test_get_predictions_for_fixture(self, db):
+        t1 = insert_team(db, "Arsenal")
+        t2 = insert_team(db, "Chelsea")
+        c1 = insert_competition(db, "Premier League")
+        fid = insert_fixture(db, "2026-04-01", t1, t2, c1)
+        insert_prediction(db, p_home=0.45, p_draw=0.28, p_away=0.27,
+                          home_elo=1550.0, away_elo=1480.0, fixture_id=fid)
+        insert_prediction(db, p_home=0.50, p_draw=0.25, p_away=0.25,
+                          home_elo=1560.0, away_elo=1490.0, fixture_id=fid)
+        db.commit()
+        preds = get_predictions_for_fixture(db, fid)
+        assert len(preds) == 2
+        # Most recent prediction first (ordered by predicted_at DESC)
+        assert preds[0]["p_home"] in (0.45, 0.50)
+
+    def test_get_predictions_empty(self, db):
+        preds = get_predictions_for_fixture(db, 99999)
+        assert preds == []
+
+
+class TestSchemaNewTables:
+    """Test that new tables are created correctly."""
+
+    def test_fixtures_table_exists(self, db):
+        tables = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='fixtures'"
+        ).fetchall()
+        assert len(tables) == 1
+
+    def test_predictions_table_exists(self, db):
+        tables = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='predictions'"
+        ).fetchall()
+        assert len(tables) == 1
+
+    def test_fixtures_indexes(self, db):
+        indexes = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_fixtures%'"
+        ).fetchall()
+        index_names = {row["name"] for row in indexes}
+        assert "idx_fixtures_status" in index_names
+        assert "idx_fixtures_date" in index_names
+
+    def test_predictions_indexes(self, db):
+        indexes = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_predictions%'"
+        ).fetchall()
+        index_names = {row["name"] for row in indexes}
+        assert "idx_predictions_fixture" in index_names
+        assert "idx_predictions_match" in index_names

@@ -6,7 +6,7 @@
 
 **Deployment target:** Hetzner VPS (Docker container)
 **Frontend structure:** backend/templates/ + backend/static/ (co-located with FastAPI)
-**Chart.js scope:** Basic line charts (zoom/pan/multi-team overlay deferred to M4.5)
+**Chart.js scope:** Basic line charts + multi-team overlay (zoom/pan deferred to M4.5)
 
 ---
 
@@ -40,12 +40,44 @@ Per-team page showing rating history and context.
 - Interactive Elo trajectory chart (using charting lib from Sprint 6 ADR)
 - Current rating, rank, league
 - Recent match results with Elo deltas
-- Compare with other teams (add/remove teams on the chart)
+- Single-team view as default
 
 **Deliverables:**
 - Team detail page at `/team/{team_id}`
-- Interactive chart with zoom, hover tooltips, multi-team overlay
-- Recent matches table
+- Interactive chart with hover tooltips showing rating and delta
+- Recent matches table with color-coded results and Elo changes
+
+### 2.5. Frontend: Multi-Team Comparison Chart
+
+**Priority:** P1 | **Impact:** High (NEW — pulled from M4.5 based on stakeholder request)
+
+Interactive chart allowing users to compare Elo trajectories for multiple teams simultaneously.
+
+**Features:**
+- **League/competition view**: `/compare?league={code}` shows top 7 teams by default
+  - Examples: `/compare?league=epl`, `/compare?league=laliga`, `/compare?competition=cl`
+- **Add/remove teams**: Interactive UI to add or remove teams from the chart
+  - Team search/autocomplete to add any team
+  - Click team in legend or use × button to remove
+- **Multi-line chart**: Each team rendered as a different colored line
+  - Distinct colors for visual clarity (color palette: 7+ colors)
+  - Legend showing team names with color indicators
+- **Hover tooltips**: Show all teams' ratings at a given date when hovering
+- **Responsive**: Chart adapts to mobile screens (scrollable legend if needed)
+
+**Deliverables:**
+- Comparison page at `/compare`
+- Query parameters: `?league={code}`, `?competition={code}`, `?teams={id1,id2,id3}`
+- Default view: Top 7 teams from selected league/competition
+- Add/remove team controls (search + click to add, × to remove)
+- Chart.js multi-dataset implementation with distinct colors
+- URL updates when teams added/removed (shareable links)
+
+**Implementation notes:**
+- Use Chart.js datasets array (one dataset per team)
+- Color palette: Use Tailwind color classes or Chart.js default palette
+- Performance: Limit to 10 teams max to prevent chart clutter
+- API: Fetch history for multiple teams in parallel or batch endpoint
 
 ### 3. Match Prediction Widget
 
@@ -115,6 +147,9 @@ Ship to production.
 
 - [ ] Rankings page renders current ratings for all leagues
 - [ ] Team detail page shows interactive Elo trajectory chart
+- [ ] Multi-team comparison chart shows top 7 teams by default for a league/competition
+- [ ] Users can add/remove teams from comparison chart via search
+- [ ] Comparison chart supports up to 10 teams with distinct colors
 - [ ] Search works for team names
 - [ ] Match prediction widget works for any team pair across all leagues
 - [ ] Historical date picker shows accurate ratings at any past date

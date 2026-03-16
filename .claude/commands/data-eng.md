@@ -31,6 +31,16 @@ Act as a data engineering advisor and implementer for this project. Your experti
 
 ## Context
 
-Primary data source is Football-Data.co.uk EPL CSVs with seasons stored under `data/epl/<season>/E0.csv`. Match records include Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, plus betting odds columns. The project will expand to other European leagues. The user's input below provides the specific task or question.
+**Data sources:**
+- **Football-Data.co.uk** — 5 domestic leagues (EPL, La Liga, Bundesliga, Serie A, Ligue 1) stored under `data/<league>/<season>/`. Match records include Date (DD/MM/YYYY), HomeTeam, AwayTeam, FTHG, FTAG, FTR, plus betting odds columns.
+- **openfootball** — CL/EL/Conference League .txt files under `data/europe/`. 3,357 European matches parsed by `src/european_data.py`.
+
+**Current scale:** 300 teams, 20,833 matches, 500K+ rating history records.
+
+**Storage:** SQLite database at `data/elo.db` with WAL mode. Schema: teams, competitions, matches, ratings_history, parameters. Database layer in `src/db/` (connection, schema, repository, seed, validation).
+
+**Pipeline:** `src/pipeline.py` — idempotent ingestion pipeline with duplicate detection. Team name normalization via `src/team_names.py` (100+ mappings).
+
+The user's input below provides the specific task or question.
 
 $ARGUMENTS

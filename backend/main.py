@@ -5,6 +5,7 @@ and match history.
 """
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -17,10 +18,15 @@ from fastapi.templating import Jinja2Templates
 
 from backend.models import (
     ErrorResponse,
+    FixturePrediction,
+    FixtureResponse,
+    FixtureTeam,
+    FixturesResponse,
     HealthResponse,
     LeagueInfo,
     LeaguesResponse,
     MatchSummary,
+    PredictionAccuracyResponse,
     PredictionResponse,
     RankingEntry,
     RankingsResponse,
@@ -28,10 +34,16 @@ from backend.models import (
     SearchResponse,
     TeamDetail,
     TeamHistoryResponse,
+    TeamResultEntry,
+    TeamResultsResponse,
     TeamSearchResult,
+    TeamStatsCard,
 )
+from src.config import EloSettings
 from src.db.connection import get_async_connection, get_db_path
 from src.prediction import predict_match
+
+_settings = EloSettings()
 
 
 # Database connection pool managed at application lifecycle
@@ -72,10 +84,11 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# CORS configuration - allow frontend development from different origin
+# CORS configuration
+_cors_origins = os.environ.get("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -122,23 +135,86 @@ async def general_exception_handler(request, exc: Exception):
 async def home(request: Request):
     """Home page - rankings view."""
     return templates.TemplateResponse(
-        "rankings.html",
-        {"request": request, "today": date.today().isoformat()},
+        request, "rankings.html",
+        {"today": date.today().isoformat()},
     )
 
 
 @app.get("/predict", response_class=HTMLResponse, tags=["Frontend"])
 async def predict_page(request: Request):
     """Match prediction page."""
-    # Will be implemented in task #7
-    return JSONResponse({"message": "Prediction page - coming soon"})
+    return templates.TemplateResponse(request, "predict.html")
 
 
 @app.get("/team/{team_id}", response_class=HTMLResponse, tags=["Frontend"])
-async def team_page(request: Request, team_id: int):
-    """Team detail page."""
-    # Will be implemented in task #6
-    return JSONResponse({"message": f"Team page for ID {team_id} - coming soon"})
+async def team_page(
+    request: Request,
+    team_id: int,
+    league: str | None = Query(None, description="League context for navigation"),
+):
+    """Team detail page with Elo trajectory chart and recent matches."""
+    # Fetch team name for page title (will be loaded again via API in Alpine.js)
+    conn = await get_async_connection()
+    try:
+        cursor = await conn.execute(
+            "SELECT name FROM teams WHERE id = ?", (team_id,)
+        )
+        team_row = await cursor.fetchone()
+        await conn.close()
+
+        if team_row is None:
+            raise HTTPException(status_code=404, detail=f"Team with ID {team_id} not found")
+
+        team_name = team_row[0]
+
+        # Map league codes to display names
+        league_names = {
+            'epl': 'Premier League',
+            'laliga': 'La Liga',
+            'bundesliga': 'Bundesliga',
+            'seriea': 'Serie A',
+            'ligue1': 'Ligue 1',
+        }
+        league_name = league_names.get(league, '') if league else ''
+
+        return templates.TemplateResponse(
+            request, "team.html",
+            {
+                "team_id": team_id,
+                "team_name": team_name,
+                "league": league,
+                "league_name": league_name,
+            },
+        )
+    except HTTPException:
+        await conn.close()
+        raise
+
+
+@app.get("/compare", response_class=HTMLResponse, tags=["Frontend"])
+async def compare_page(
+    request: Request,
+    league: str | None = Query(None, description="League code to filter teams"),
+):
+    """Multi-team comparison chart page.
+
+    Query parameters:
+        league: Show top 7 teams from league (epl, laliga, bundesliga, seriea, ligue1)
+        competition: Show top 7 teams from competition (cl, el, conference)
+        teams: Show specific teams by ID (comma-separated, e.g., "1,2,3")
+
+    If no parameters provided, shows global top 7 teams.
+    """
+    return templates.TemplateResponse(
+        request, "compare.html",
+        {"league": league},
+    )
+
+
+@app.get("/fixtures", response_class=HTMLResponse, tags=["Frontend"])
+async def fixtures_page(request: Request):
+    """Upcoming fixtures with Elo predictions."""
+    return templates.TemplateResponse(request, "fixtures.html")
 
 
 # --- API Endpoints ---
@@ -203,6 +279,11 @@ async def get_rankings(
         description="Date for historical rankings (YYYY-MM-DD). Omit for current rankings.",
         examples=["2024-12-31"],
     ),
+    country: str | None = Query(
+        None,
+        description="Filter by country (e.g., England, Spain, Germany, Italy, France)",
+        examples=["England"],
+    ),
     limit: int = Query(
         50,
         description="Maximum number of teams to return",
@@ -213,43 +294,75 @@ async def get_rankings(
     """Get team rankings sorted by Elo rating.
 
     Returns current rankings if no date specified, otherwise returns rankings
-    as of the specified date.
+    as of the specified date. Optionally filter by country.
     """
     conn = await get_async_connection()
 
     try:
         if date is None:
             # Current rankings - latest rating per team
-            cursor = await conn.execute(
-                """SELECT t.name, t.country, rh.rating
-                   FROM ratings_history rh
-                   JOIN teams t ON t.id = rh.team_id
-                   WHERE rh.id IN (
-                       SELECT id FROM ratings_history rh2
-                       WHERE rh2.team_id = rh.team_id
-                       ORDER BY rh2.date DESC, rh2.id DESC
-                       LIMIT 1
-                   )
-                   ORDER BY rh.rating DESC
-                   LIMIT ?""",
-                (limit,),
-            )
+            if country:
+                cursor = await conn.execute(
+                    """SELECT t.id, t.name, t.country, rh.rating
+                       FROM ratings_history rh
+                       JOIN teams t ON t.id = rh.team_id
+                       WHERE rh.id IN (
+                           SELECT id FROM ratings_history rh2
+                           WHERE rh2.team_id = rh.team_id
+                           ORDER BY rh2.date DESC, rh2.id DESC
+                           LIMIT 1
+                       ) AND t.country = ?
+                       ORDER BY rh.rating DESC
+                       LIMIT ?""",
+                    (country, limit),
+                )
+            else:
+                cursor = await conn.execute(
+                    """SELECT t.id, t.name, t.country, rh.rating
+                       FROM ratings_history rh
+                       JOIN teams t ON t.id = rh.team_id
+                       WHERE rh.id IN (
+                           SELECT id FROM ratings_history rh2
+                           WHERE rh2.team_id = rh.team_id
+                           ORDER BY rh2.date DESC, rh2.id DESC
+                           LIMIT 1
+                       )
+                       ORDER BY rh.rating DESC
+                       LIMIT ?""",
+                    (limit,),
+                )
         else:
             # Historical rankings at specific date
-            cursor = await conn.execute(
-                """SELECT t.name, t.country, rh.rating
-                   FROM ratings_history rh
-                   JOIN teams t ON t.id = rh.team_id
-                   WHERE rh.id IN (
-                       SELECT rh2.id FROM ratings_history rh2
-                       WHERE rh2.team_id = rh.team_id AND rh2.date <= ?
-                       ORDER BY rh2.date DESC, rh2.id DESC
-                       LIMIT 1
-                   )
-                   ORDER BY rh.rating DESC
-                   LIMIT ?""",
-                (date, limit),
-            )
+            if country:
+                cursor = await conn.execute(
+                    """SELECT t.id, t.name, t.country, rh.rating
+                       FROM ratings_history rh
+                       JOIN teams t ON t.id = rh.team_id
+                       WHERE rh.id IN (
+                           SELECT rh2.id FROM ratings_history rh2
+                           WHERE rh2.team_id = rh.team_id AND rh2.date <= ?
+                           ORDER BY rh2.date DESC, rh2.id DESC
+                           LIMIT 1
+                       ) AND t.country = ?
+                       ORDER BY rh.rating DESC
+                       LIMIT ?""",
+                    (date, country, limit),
+                )
+            else:
+                cursor = await conn.execute(
+                    """SELECT t.id, t.name, t.country, rh.rating
+                       FROM ratings_history rh
+                       JOIN teams t ON t.id = rh.team_id
+                       WHERE rh.id IN (
+                           SELECT rh2.id FROM ratings_history rh2
+                           WHERE rh2.team_id = rh.team_id AND rh2.date <= ?
+                           ORDER BY rh2.date DESC, rh2.id DESC
+                           LIMIT 1
+                       )
+                       ORDER BY rh.rating DESC
+                       LIMIT ?""",
+                    (date, limit),
+                )
 
         rows = await cursor.fetchall()
         await conn.close()
@@ -257,9 +370,10 @@ async def get_rankings(
         rankings = [
             RankingEntry(
                 rank=i + 1,
-                team=row[0],
-                country=row[1],
-                rating=round(row[2], 1),
+                team=row[1],
+                team_id=row[0],
+                country=row[2],
+                rating=round(row[3], 1),
             )
             for i, row in enumerate(rows)
         ]
@@ -408,14 +522,14 @@ async def get_team_history(
 
         team_name = team_row[0]
 
-        # Get rating history
+        # Get rating history (filtered by display_from_date)
         cursor = await conn.execute(
             """SELECT date, rating, rating_delta
                FROM ratings_history
-               WHERE team_id = ?
+               WHERE team_id = ? AND date >= ?
                ORDER BY date ASC, id ASC
                LIMIT ?""",
-            (team_id, limit),
+            (team_id, _settings.display_from_date, limit),
         )
         rows = await cursor.fetchall()
         await conn.close()
@@ -430,6 +544,189 @@ async def get_team_history(
         ]
 
         return TeamHistoryResponse(team=team_name, history=history)
+
+    except HTTPException:
+        await conn.close()
+        raise
+    except Exception as e:
+        await conn.close()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@app.get(
+    "/api/teams/{team_id}/results",
+    response_model=TeamResultsResponse,
+    summary="Get team results with Elo data",
+    description="Get recent match results enriched with pre/post-match Elo ratings and stats.",
+    tags=["Teams"],
+    responses={404: {"model": ErrorResponse, "description": "Team not found"}},
+)
+async def get_team_results(
+    team_id: int,
+    limit: int = Query(10, description="Number of recent matches", ge=1, le=50),
+):
+    """Get enriched match results and stats card for a team."""
+    import json
+    from datetime import datetime, timedelta
+
+    conn = await get_async_connection()
+
+    try:
+        # Verify team exists
+        cursor = await conn.execute(
+            "SELECT id, name, country FROM teams WHERE id = ?", (team_id,)
+        )
+        team_row = await cursor.fetchone()
+        if team_row is None:
+            await conn.close()
+            raise HTTPException(status_code=404, detail=f"Team with ID {team_id} not found")
+
+        team_name = team_row[1]
+
+        # Get current rating and rank
+        cursor = await conn.execute(
+            """SELECT rating FROM ratings_history
+               WHERE team_id = ? ORDER BY date DESC, id DESC LIMIT 1""",
+            (team_id,),
+        )
+        rating_row = await cursor.fetchone()
+        current_rating = round(rating_row[0], 1) if rating_row else 1400.0
+
+        cursor = await conn.execute(
+            """SELECT COUNT(*) + 1 FROM (
+                   SELECT MAX(rh.rating) as max_rating
+                   FROM ratings_history rh
+                   WHERE rh.id IN (
+                       SELECT id FROM ratings_history rh2
+                       WHERE rh2.team_id = rh.team_id
+                       ORDER BY rh2.date DESC, rh2.id DESC LIMIT 1
+                   ) GROUP BY rh.team_id
+               ) WHERE max_rating > ?""",
+            (current_rating,),
+        )
+        rank_row = await cursor.fetchone()
+        rank = rank_row[0] if rank_row else 1
+
+        # Get recent matches with Elo data
+        cursor = await conn.execute(
+            """SELECT m.date, th.name, ta.name,
+                      m.home_goals, m.away_goals, m.result,
+                      c.name as comp,
+                      m.home_team_id, m.away_team_id
+               FROM matches m
+               JOIN teams th ON th.id = m.home_team_id
+               JOIN teams ta ON ta.id = m.away_team_id
+               JOIN competitions c ON c.id = m.competition_id
+               WHERE m.home_team_id = ? OR m.away_team_id = ?
+               ORDER BY m.date DESC, m.id DESC
+               LIMIT ?""",
+            (team_id, team_id, limit),
+        )
+        match_rows = await cursor.fetchall()
+
+        # Get rating history for this team (for Elo before/after calc)
+        cursor = await conn.execute(
+            """SELECT date, rating, rating_delta
+               FROM ratings_history WHERE team_id = ?
+               ORDER BY date DESC, id DESC LIMIT ?""",
+            (team_id, limit + 50),
+        )
+        history_rows = await cursor.fetchall()
+
+        # Build a list of (date, rating, delta) for lookup
+        history_list = [(r[0], r[1], r[2]) for r in history_rows]
+
+        # Build enriched results
+        results = []
+        form = []
+        for match in match_rows:
+            m_date, home_name, away_name = match[0], match[1], match[2]
+            home_goals, away_goals, result = match[3], match[4], match[5]
+            comp = match[6]
+            is_home = match[7] == team_id
+
+            # Team result
+            if result == 'D':
+                team_result = 'D'
+            elif result == 'H':
+                team_result = 'W' if is_home else 'L'
+            else:
+                team_result = 'L' if is_home else 'W'
+
+            # Find matching history point
+            elo_after = current_rating
+            elo_change = 0.0
+            for h_date, h_rating, h_delta in history_list:
+                if h_date == m_date:
+                    elo_after = round(h_rating, 1)
+                    elo_change = round(h_delta, 1)
+                    break
+
+            elo_before = round(elo_after - elo_change, 1)
+
+            results.append(TeamResultEntry(
+                date=m_date,
+                home_team=home_name,
+                away_team=away_name,
+                home_goals=home_goals,
+                away_goals=away_goals,
+                result=result,
+                competition=comp,
+                team_result=team_result,
+                elo_before=elo_before,
+                elo_after=elo_after,
+                elo_change=elo_change,
+            ))
+
+            if len(form) < 5:
+                form.append(team_result)
+
+        # 30-day trend
+        today = datetime.now().strftime('%Y-%m-%d')
+        thirty_days_ago = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        cursor = await conn.execute(
+            """SELECT rating FROM ratings_history
+               WHERE team_id = ? AND date <= ? ORDER BY date DESC, id DESC LIMIT 1""",
+            (team_id, thirty_days_ago),
+        )
+        old_rating_row = await cursor.fetchone()
+        trend_30d = round(current_rating - (old_rating_row[0] if old_rating_row else current_rating), 1)
+
+        # Peak and trough (filtered by display_from_date)
+        cursor = await conn.execute(
+            """SELECT date, rating FROM ratings_history
+               WHERE team_id = ? AND date >= ?
+               ORDER BY rating DESC LIMIT 1""",
+            (team_id, _settings.display_from_date),
+        )
+        peak_row = await cursor.fetchone()
+        peak_rating = round(peak_row[1], 1) if peak_row else current_rating
+        peak_date = peak_row[0] if peak_row else today
+
+        cursor = await conn.execute(
+            """SELECT date, rating FROM ratings_history
+               WHERE team_id = ? AND date >= ?
+               ORDER BY rating ASC LIMIT 1""",
+            (team_id, _settings.display_from_date),
+        )
+        trough_row = await cursor.fetchone()
+        trough_rating = round(trough_row[1], 1) if trough_row else current_rating
+        trough_date = trough_row[0] if trough_row else today
+
+        await conn.close()
+
+        stats = TeamStatsCard(
+            current_rating=current_rating,
+            rank=rank,
+            form=form,
+            trend_30d=trend_30d,
+            peak_rating=peak_rating,
+            peak_date=peak_date,
+            trough_rating=trough_rating,
+            trough_date=trough_date,
+        )
+
+        return TeamResultsResponse(team=team_name, stats=stats, results=results)
 
     except HTTPException:
         await conn.close()
@@ -604,8 +901,108 @@ async def search_teams(
         raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
 
 
-# Root redirect to docs
-@app.get("/", include_in_schema=False)
-async def root():
-    """Redirect root to API documentation."""
-    return {"message": "Football Elo Rating API", "docs": "/docs", "redoc": "/redoc"}
+@app.get(
+    "/api/fixtures",
+    response_model=FixturesResponse,
+    summary="Get upcoming fixtures",
+    description="Get upcoming scheduled fixtures with Elo-based predictions.",
+    tags=["Fixtures"],
+)
+async def get_fixtures(
+    competition: str | None = Query(
+        None,
+        description="Filter by competition name (e.g., 'Premier League')",
+        examples=["Premier League"],
+    ),
+):
+    """Get upcoming fixtures joined with predictions."""
+    conn = await get_async_connection()
+
+    try:
+        if competition:
+            cursor = await conn.execute(
+                """SELECT f.id, f.date,
+                          f.home_team_id, th.name as home_name,
+                          f.away_team_id, ta.name as away_name,
+                          c.name as competition,
+                          p.p_home, p.p_draw, p.p_away, p.home_elo, p.away_elo
+                   FROM fixtures f
+                   JOIN teams th ON th.id = f.home_team_id
+                   JOIN teams ta ON ta.id = f.away_team_id
+                   JOIN competitions c ON c.id = f.competition_id
+                   LEFT JOIN predictions p ON p.fixture_id = f.id
+                   WHERE f.status = 'scheduled'
+                     AND f.date >= date('now')
+                     AND c.name = ?
+                   ORDER BY f.date ASC, c.name ASC""",
+                (competition,),
+            )
+        else:
+            cursor = await conn.execute(
+                """SELECT f.id, f.date,
+                          f.home_team_id, th.name as home_name,
+                          f.away_team_id, ta.name as away_name,
+                          c.name as competition,
+                          p.p_home, p.p_draw, p.p_away, p.home_elo, p.away_elo
+                   FROM fixtures f
+                   JOIN teams th ON th.id = f.home_team_id
+                   JOIN teams ta ON ta.id = f.away_team_id
+                   JOIN competitions c ON c.id = f.competition_id
+                   LEFT JOIN predictions p ON p.fixture_id = f.id
+                   WHERE f.status = 'scheduled'
+                     AND f.date >= date('now')
+                   ORDER BY f.date ASC, c.name ASC"""
+            )
+
+        rows = await cursor.fetchall()
+        await conn.close()
+
+        fixtures = []
+        for row in rows:
+            prediction = None
+            if row[7] is not None:
+                prediction = FixturePrediction(
+                    p_home=round(row[7], 4),
+                    p_draw=round(row[8], 4),
+                    p_away=round(row[9], 4),
+                    home_elo=round(row[10], 1),
+                    away_elo=round(row[11], 1),
+                )
+
+            fixtures.append(FixtureResponse(
+                date=row[1],
+                home_team=FixtureTeam(id=row[2], name=row[3]),
+                away_team=FixtureTeam(id=row[4], name=row[5]),
+                competition=row[6],
+                prediction=prediction,
+            ))
+
+        return FixturesResponse(count=len(fixtures), fixtures=fixtures)
+
+    except Exception as e:
+        await conn.close()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@app.get(
+    "/api/prediction-accuracy",
+    response_model=PredictionAccuracyResponse,
+    summary="Get prediction accuracy stats",
+    description="Aggregate prediction accuracy statistics including Brier scores and calibration data.",
+    tags=["Predictions"],
+)
+async def prediction_accuracy(
+    competition: str | None = Query(
+        None,
+        description="Filter by competition name (e.g., 'Premier League')",
+        examples=["Premier League"],
+    ),
+):
+    """Get aggregate prediction accuracy based on Brier scores."""
+    from src.live.prediction_tracker import get_prediction_accuracy
+
+    try:
+        result = await get_prediction_accuracy(competition=competition)
+        return PredictionAccuracyResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error computing accuracy: {str(e)}")

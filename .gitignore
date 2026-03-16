@@ -5,6 +5,17 @@ __pycache__/
 notebooks/outputs/
 .pytest_cache/
 .ipynb_checkpoints/
+
+# Database — persistent state, not tracked in git.
+# Rebuilt via: uv run python src/pipeline.py
+# Backed up via: bash scripts/backup_db.sh
+data/elo.db
+data/elo.db-wal
+data/elo.db-shm
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/backups/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

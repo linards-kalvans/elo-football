@@ -255,3 +255,113 @@ def get_latest_match_date(conn: sqlite3.Connection) -> str | None:
     """Get the date of the most recent match."""
     row = conn.execute("SELECT MAX(date) as max_date FROM matches").fetchone()
     return row["max_date"]
+
+
+# --- Fixtures ---
+
+
+def insert_fixture(conn: sqlite3.Connection, date: str, home_team_id: int,
+                   away_team_id: int, competition_id: int, season: str = "",
+                   status: str = "scheduled",
+                   external_api_id: str | None = None) -> int | None:
+    """Insert a fixture. Returns fixture ID, or None if duplicate."""
+    try:
+        cur = conn.execute(
+            """INSERT INTO fixtures
+               (date, home_team_id, away_team_id, competition_id, season,
+                status, external_api_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (date, home_team_id, away_team_id, competition_id, season,
+             status, external_api_id),
+        )
+        return cur.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+
+
+def get_upcoming_fixtures(conn: sqlite3.Connection,
+                          days_ahead: int = 7) -> list[dict]:
+    """Get upcoming scheduled fixtures within the given number of days."""
+    rows = conn.execute(
+        """SELECT f.id, f.date, f.status, f.season, f.external_api_id,
+                  th.name as home_team, ta.name as away_team,
+                  c.name as competition,
+                  f.home_team_id, f.away_team_id
+           FROM fixtures f
+           JOIN teams th ON th.id = f.home_team_id
+           JOIN teams ta ON ta.id = f.away_team_id
+           JOIN competitions c ON c.id = f.competition_id
+           WHERE f.status = 'scheduled'
+             AND f.date >= date('now')
+             AND f.date <= date('now', '+' || ? || ' days')
+           ORDER BY f.date ASC""",
+        (days_ahead,),
+    ).fetchall()
+
+    return [
+        {
+            "id": row["id"],
+            "date": row["date"],
+            "home_team": row["home_team"],
+            "away_team": row["away_team"],
+            "competition": row["competition"],
+            "status": row["status"],
+            "season": row["season"],
+            "external_api_id": row["external_api_id"],
+            "home_team_id": row["home_team_id"],
+            "away_team_id": row["away_team_id"],
+        }
+        for row in rows
+    ]
+
+
+def update_fixture_status(conn: sqlite3.Connection, fixture_id: int,
+                           status: str) -> bool:
+    """Update fixture status. Returns True if row was updated."""
+    cur = conn.execute(
+        "UPDATE fixtures SET status = ?, last_updated = datetime('now') WHERE id = ?",
+        (status, fixture_id),
+    )
+    return cur.rowcount > 0
+
+
+# --- Predictions ---
+
+
+def insert_prediction(conn: sqlite3.Connection, p_home: float, p_draw: float,
+                      p_away: float, home_elo: float, away_elo: float,
+                      match_id: int | None = None,
+                      fixture_id: int | None = None) -> int:
+    """Insert a prediction. Exactly one of match_id/fixture_id must be set."""
+    cur = conn.execute(
+        """INSERT INTO predictions
+           (match_id, fixture_id, p_home, p_draw, p_away, home_elo, away_elo)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (match_id, fixture_id, p_home, p_draw, p_away, home_elo, away_elo),
+    )
+    return cur.lastrowid
+
+
+def get_predictions_for_fixture(conn: sqlite3.Connection,
+                                 fixture_id: int) -> list[dict]:
+    """Get all predictions for a fixture."""
+    rows = conn.execute(
+        """SELECT id, predicted_at, p_home, p_draw, p_away, home_elo, away_elo
+           FROM predictions
+           WHERE fixture_id = ?
+           ORDER BY predicted_at DESC""",
+        (fixture_id,),
+    ).fetchall()
+
+    return [
+        {
+            "id": row["id"],
+            "predicted_at": row["predicted_at"],
+            "p_home": row["p_home"],
+            "p_draw": row["p_draw"],
+            "p_away": row["p_away"],
+            "home_elo": row["home_elo"],
+            "away_elo": row["away_elo"],
+        }
+        for row in rows
+    ]

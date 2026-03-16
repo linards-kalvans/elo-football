@@ -1,0 +1,72 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - name: Run pipeline to create test database
+        run: uv run python -c "from src.pipeline import run_pipeline; run_pipeline()"
+      - run: uv run pytest tests/ -v
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t elo-football .
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Deploy to Hetzner VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/elo-football
+            git pull origin main
+
+            # 1. Back up the database before any changes
+            bash scripts/backup_db.sh
+
+            # 2. Rebuild and restart containers
+            docker compose up --build -d
+
+            # 3. Run schema migrations (safe to run multiple times)
+            docker compose exec app uv run python -c "import asyncio; from src.db.migrate import run_migrations; asyncio.run(run_migrations())"
+
+            # 4. Incremental data update (appends new matches, recomputes ratings)
+            docker compose exec app uv run python -c "from src.pipeline import run_incremental_update; run_incremental_update()"
+
+            # 5. Health check — retry up to 5 times with 3s delay
+            for i in 1 2 3 4 5; do
+              if docker compose exec app python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"; then
+                echo "Health check passed on attempt $i"
+                break
+              fi
+              echo "Health check attempt $i failed, retrying in 3s..."
+              sleep 3
+            done

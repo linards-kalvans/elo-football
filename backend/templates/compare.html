@@ -1,0 +1,661 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Teams - Football Elo Ratings{% endblock %}
+
+{% block extra_head %}
+<!-- ApexCharts -->
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.1/dist/apexcharts.min.js"></script>
+<!-- noUiSlider for range slider -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css">
+<script src="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div x-data="comparePage('{{ league or '' }}')">
+        <!-- Header -->
+        <div class="mb-6">
+            <h1 class="text-3xl font-bold text-gray-900">Compare Team Elo Trajectories</h1>
+            <p class="mt-2 text-sm text-gray-500">
+                View and compare Elo rating histories for multiple teams
+            </p>
+        </div>
+
+        <!-- Loading state -->
+        <div x-show="loading" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <p class="mt-2 text-sm text-gray-500">Loading team data...</p>
+        </div>
+
+        <!-- Error state -->
+        <div x-show="error" x-cloak class="rounded-md bg-red-50 p-4 mb-6">
+            <div class="flex">
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">Error loading data</h3>
+                    <p class="mt-2 text-sm text-red-700" x-text="error"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main content -->
+        <div x-show="!loading && !error" x-cloak>
+            <!-- Controls Row -->
+            <div class="bg-white shadow sm:rounded-lg mb-6">
+                <div class="px-4 py-5 sm:p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <!-- League Selector -->
+                        <div>
+                            <label for="league-select" class="block text-sm font-medium text-gray-700 mb-1">
+                                Filter by League
+                            </label>
+                            <select
+                                id="league-select"
+                                x-model="selectedLeague"
+                                @change="onLeagueChange"
+                                class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            >
+                                <option value="">All Leagues (Global Top 7)</option>
+                                <option value="epl">Premier League</option>
+                                <option value="laliga">La Liga</option>
+                                <option value="bundesliga">Bundesliga</option>
+                                <option value="seriea">Serie A</option>
+                                <option value="ligue1">Ligue 1</option>
+                            </select>
+                        </div>
+
+                        <!-- Team Search -->
+                        <div class="relative">
+                            <label for="team-search" class="block text-sm font-medium text-gray-700 mb-1">
+                                Add Team to Comparison
+                            </label>
+                            <input
+                                type="text"
+                                id="team-search"
+                                x-model="searchQuery"
+                                @input.debounce.300ms="searchTeams"
+                                @focus="showSearchResults = true"
+                                placeholder="Search for a team..."
+                                class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            />
+
+                            <!-- Search results dropdown -->
+                            <div
+                                x-show="showSearchResults && searchResults.length > 0"
+                                @click.away="showSearchResults = false"
+                                class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm"
+                            >
+                                <template x-for="result in searchResults" :key="result.id">
+                                    <div
+                                        @click="addTeam(result.id, result.name)"
+                                        class="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-indigo-50"
+                                    >
+                                        <span class="font-medium block truncate" x-text="result.name"></span>
+                                        <span class="text-gray-500 text-xs" x-text="result.country"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Selected Teams Chips -->
+                    <div x-show="selectedTeams.length > 0" class="mb-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700">Selected Teams:</span>
+                            <span class="text-sm text-gray-500" x-text="`${selectedTeams.length} / 10 teams`"></span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="team in selectedTeams" :key="team.id">
+                                <div class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
+                                    <span x-text="team.name"></span>
+                                    <button
+                                        @click="removeTeam(team.id)"
+                                        class="ml-2 inline-flex items-center p-0.5 rounded-full hover:bg-indigo-200"
+                                    >
+                                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Time Range Slider -->
+                    <div x-show="selectedTeams.length > 0">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Time Range: <span x-text="formatDateRange()"></span>
+                        </label>
+                        <div id="timeRangeSlider" class="mb-2"></div>
+                        <div class="flex justify-between text-xs text-gray-500">
+                            <span x-text="minDate"></span>
+                            <span x-text="maxDate"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart -->
+            <div class="bg-white shadow sm:rounded-lg mb-6">
+                <div class="px-4 py-5 sm:p-6">
+                    <div id="comparisonChart" style="min-height: 450px;"></div>
+                </div>
+            </div>
+
+            <!-- Empty state -->
+            <div x-show="selectedTeams.length === 0" class="bg-white shadow sm:rounded-lg">
+                <div class="text-center py-12">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">No teams selected</h3>
+                    <p class="mt-1 text-sm text-gray-500">Search and add teams to start comparing their Elo trajectories</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function comparePage(initialLeague) {
+    // Color palette for team lines (ApexCharts compatible)
+    const COLORS = [
+        '#EF4444', // Red
+        '#3B82F6', // Blue
+        '#22C55E', // Green
+        '#EAB308', // Yellow
+        '#A855F7', // Purple
+        '#EC4899', // Pink
+        '#6366F1', // Indigo
+        '#F97316', // Orange
+        '#14B8A6', // Teal
+        '#06B6D4', // Cyan
+    ];
+
+    return {
+        selectedLeague: initialLeague,
+        selectedTeams: [],
+        teamHistories: {},
+        searchQuery: '',
+        searchResults: [],
+        showSearchResults: false,
+        loading: true,
+        error: null,
+        chart: null,
+        slider: null,
+        minDate: null,
+        maxDate: null,
+        selectedMinDate: null,
+        selectedMaxDate: null,
+
+        async init() {
+            // Parse URL parameters
+            const params = new URLSearchParams(window.location.search);
+            const league = params.get('league') || this.selectedLeague;
+            const competition = params.get('competition');
+            const teams = params.get('teams');
+
+            this.selectedLeague = league;
+
+            try {
+                if (teams) {
+                    // Load specific teams
+                    const teamIds = teams.split(',').map(id => parseInt(id.trim()));
+                    await this.loadTeamsByIds(teamIds);
+                } else if (league || competition) {
+                    // Load top 7 from league/competition
+                    await this.loadTopTeams(league, competition);
+                } else {
+                    // Load global top 7
+                    await this.loadTopTeams(null, null);
+                }
+            } catch (err) {
+                this.error = err.message;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async loadTopTeams(league, competition) {
+            // Map league codes to countries
+            const leagueToCountry = {
+                'epl': 'England',
+                'laliga': 'Spain',
+                'bundesliga': 'Germany',
+                'seriea': 'Italy',
+                'ligue1': 'France'
+            };
+
+            // Fetch top 7 teams from rankings
+            let url = '/api/rankings?limit=7';
+            if (league && leagueToCountry[league]) {
+                url += `&country=${encodeURIComponent(leagueToCountry[league])}`;
+            } else if (competition) {
+                // TODO: Add competition filtering support
+                url += `&competition=${competition}`;
+            }
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to load rankings: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const teamIds = data.rankings.map(r => r.team_id);
+
+            await this.loadTeamsByIds(teamIds);
+        },
+
+        async loadTeamsByIds(teamIds) {
+            // Load team details and histories in parallel
+            const promises = teamIds.slice(0, 10).map(async (id) => {
+                try {
+                    // Fetch team info
+                    const teamResponse = await fetch(`/api/teams/${id}`);
+                    if (!teamResponse.ok) return null;
+                    const teamData = await teamResponse.json();
+
+                    // Fetch team history
+                    const historyResponse = await fetch(`/api/teams/${id}/history`);
+                    if (!historyResponse.ok) return null;
+                    const historyData = await historyResponse.json();
+
+                    return {
+                        id: teamData.id,
+                        name: teamData.name,
+                        history: historyData.history
+                    };
+                } catch (err) {
+                    console.error(`Failed to load team ${id}:`, err);
+                    return null;
+                }
+            });
+
+            const results = await Promise.all(promises);
+
+            // Add successfully loaded teams
+            results.filter(r => r !== null).forEach(team => {
+                this.selectedTeams.push({ id: team.id, name: team.name });
+                this.teamHistories[team.id] = team.history;
+            });
+
+            // Calculate date range from all histories
+            this.calculateDateRange();
+
+            // Initialize slider and render chart
+            this.$nextTick(() => {
+                this.initializeSlider();
+                this.renderChart();
+            });
+        },
+
+        calculateDateRange() {
+            // Find earliest and latest dates across all team histories
+            let earliest = null;
+            let latest = null;
+
+            Object.values(this.teamHistories).forEach(history => {
+                if (history.length > 0) {
+                    const firstDate = new Date(history[0].date);
+                    const lastDate = new Date(history[history.length - 1].date);
+
+                    if (!earliest || firstDate < earliest) earliest = firstDate;
+                    if (!latest || lastDate > latest) latest = lastDate;
+                }
+            });
+
+            this.minDate = earliest ? earliest.toISOString().split('T')[0] : null;
+            this.maxDate = latest ? latest.toISOString().split('T')[0] : null;
+
+            // Default to last 5 years
+            if (latest) {
+                const fiveYearsAgo = new Date(latest);
+                fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+                this.selectedMinDate = fiveYearsAgo > earliest ? fiveYearsAgo.toISOString().split('T')[0] : this.minDate;
+                this.selectedMaxDate = this.maxDate;
+            }
+        },
+
+        initializeSlider() {
+            if (!this.minDate || !this.maxDate) return;
+
+            const sliderElement = document.getElementById('timeRangeSlider');
+            if (!sliderElement) return;
+
+            // Clear existing slider if any
+            if (this.slider) {
+                this.slider.destroy();
+            }
+
+            const minTimestamp = new Date(this.minDate).getTime();
+            const maxTimestamp = new Date(this.maxDate).getTime();
+            const selectedMinTimestamp = new Date(this.selectedMinDate).getTime();
+            const selectedMaxTimestamp = new Date(this.selectedMaxDate).getTime();
+
+            this.slider = noUiSlider.create(sliderElement, {
+                start: [selectedMinTimestamp, selectedMaxTimestamp],
+                connect: true,
+                range: {
+                    'min': minTimestamp,
+                    'max': maxTimestamp
+                },
+                step: 24 * 60 * 60 * 1000, // 1 day in milliseconds
+                tooltips: [
+                    { to: (value) => new Date(value).toISOString().split('T')[0] },
+                    { to: (value) => new Date(value).toISOString().split('T')[0] }
+                ]
+            });
+
+            // Update chart on slider change using updateSeries for performance
+            this.slider.on('update', (values) => {
+                this.selectedMinDate = new Date(parseFloat(values[0])).toISOString().split('T')[0];
+                this.selectedMaxDate = new Date(parseFloat(values[1])).toISOString().split('T')[0];
+                if (this.chart) {
+                    const newSeries = this.buildSeries();
+                    this.chart.updateSeries(newSeries, false);
+                }
+            });
+        },
+
+        formatDateRange() {
+            if (!this.selectedMinDate || !this.selectedMaxDate) return '';
+            return `${this.selectedMinDate} to ${this.selectedMaxDate}`;
+        },
+
+        async searchTeams() {
+            if (this.searchQuery.length < 2) {
+                this.searchResults = [];
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/search?q=${encodeURIComponent(this.searchQuery)}&limit=10`);
+                if (!response.ok) return;
+
+                const data = await response.json();
+                this.searchResults = data.results;
+                this.showSearchResults = true;
+            } catch (err) {
+                console.error('Search failed:', err);
+            }
+        },
+
+        async addTeam(teamId, teamName) {
+            // Check if team already selected
+            if (this.selectedTeams.find(t => t.id === teamId)) {
+                this.showSearchResults = false;
+                this.searchQuery = '';
+                return;
+            }
+
+            // Check max teams limit
+            if (this.selectedTeams.length >= 10) {
+                alert('Maximum 10 teams allowed for comparison');
+                return;
+            }
+
+            try {
+                // Fetch team history
+                const response = await fetch(`/api/teams/${teamId}/history`);
+                if (!response.ok) throw new Error('Failed to load team history');
+
+                const data = await response.json();
+
+                // Add to selected teams
+                this.selectedTeams.push({ id: teamId, name: teamName });
+                this.teamHistories[teamId] = data.history;
+
+                // Recalculate date range
+                this.calculateDateRange();
+
+                // Update chart with new series (incremental update)
+                if (this.chart) {
+                    const newSeries = this.buildSeries();
+                    this.chart.updateSeries(newSeries, true);
+                } else {
+                    this.$nextTick(() => {
+                        this.initializeSlider();
+                        this.renderChart();
+                    });
+                }
+
+                // Update URL
+                this.updateUrl();
+
+                // Clear search
+                this.searchQuery = '';
+                this.searchResults = [];
+                this.showSearchResults = false;
+            } catch (err) {
+                this.error = err.message;
+            }
+        },
+
+        removeTeam(teamId) {
+            // Remove from selected teams
+            this.selectedTeams = this.selectedTeams.filter(t => t.id !== teamId);
+            delete this.teamHistories[teamId];
+
+            if (this.selectedTeams.length > 0) {
+                // Recalculate date range
+                this.calculateDateRange();
+
+                // Update chart by removing the series (incremental update)
+                if (this.chart) {
+                    const newSeries = this.buildSeries();
+                    const newColors = this.selectedTeams.map((_, idx) => COLORS[idx % COLORS.length]);
+                    this.chart.updateOptions({
+                        series: newSeries,
+                        colors: newColors
+                    }, false, false);
+                }
+            } else {
+                // Destroy slider and chart if no teams
+                if (this.slider) {
+                    this.slider.destroy();
+                    this.slider = null;
+                }
+                if (this.chart) {
+                    this.chart.destroy();
+                    this.chart = null;
+                }
+            }
+
+            // Update URL
+            this.updateUrl();
+        },
+
+        async onLeagueChange() {
+            // Clear current teams
+            this.selectedTeams = [];
+            this.teamHistories = {};
+
+            if (this.slider) {
+                this.slider.destroy();
+                this.slider = null;
+            }
+            if (this.chart) {
+                this.chart.destroy();
+                this.chart = null;
+            }
+
+            // Load new teams
+            this.loading = true;
+            try {
+                await this.loadTopTeams(this.selectedLeague, null);
+            } catch (err) {
+                this.error = err.message;
+            } finally {
+                this.loading = false;
+            }
+
+            // Update URL
+            this.updateUrl();
+        },
+
+        updateUrl() {
+            // Build URL with current state
+            let url = '/compare';
+            const params = new URLSearchParams();
+
+            if (this.selectedLeague) {
+                params.set('league', this.selectedLeague);
+            }
+
+            if (this.selectedTeams.length > 0) {
+                const teamIds = this.selectedTeams.map(t => t.id).join(',');
+                params.set('teams', teamIds);
+            }
+
+            const queryString = params.toString();
+            if (queryString) {
+                url += '?' + queryString;
+            }
+
+            window.history.replaceState({}, '', url);
+        },
+
+        filterHistoryByDateRange(history) {
+            if (!this.selectedMinDate || !this.selectedMaxDate) return history;
+
+            return history.filter(point => {
+                return point.date >= this.selectedMinDate && point.date <= this.selectedMaxDate;
+            });
+        },
+
+        buildSeries() {
+            return this.selectedTeams.map((team) => {
+                const history = this.teamHistories[team.id] || [];
+                const filteredHistory = this.filterHistoryByDateRange(history);
+
+                return {
+                    name: team.name,
+                    data: filteredHistory.map(h => ({
+                        x: new Date(h.date).getTime(),
+                        y: Math.round(h.rating)
+                    }))
+                };
+            });
+        },
+
+        renderChart() {
+            const chartElement = document.getElementById('comparisonChart');
+            if (!chartElement || this.selectedTeams.length === 0) return;
+
+            // Destroy existing chart
+            if (this.chart) {
+                this.chart.destroy();
+            }
+
+            // Prepare series data
+            const series = this.buildSeries();
+
+            // ApexCharts configuration
+            const options = {
+                series: series,
+                chart: {
+                    type: 'line',
+                    height: 450,
+                    animations: {
+                        enabled: true,
+                        speed: 400
+                    },
+                    toolbar: {
+                        show: true,
+                        tools: {
+                            download: true,
+                            zoom: true,
+                            zoomin: true,
+                            zoomout: true,
+                            pan: true,
+                            reset: true
+                        }
+                    }
+                },
+                colors: COLORS,
+                stroke: {
+                    width: 2,
+                    curve: 'smooth'
+                },
+                xaxis: {
+                    type: 'datetime',
+                    labels: {
+                        format: 'MMM yyyy'
+                    }
+                },
+                yaxis: {
+                    title: {
+                        text: 'Elo Rating'
+                    },
+                    labels: {
+                        formatter: (value) => Math.round(value)
+                    }
+                },
+                tooltip: {
+                    shared: true,
+                    intersect: false,
+                    x: {
+                        format: 'dd MMM yyyy'
+                    },
+                    y: {
+                        formatter: (value) => Math.round(value)
+                    }
+                },
+                legend: {
+                    position: 'top',
+                    horizontalAlign: 'left',
+                    onItemHover: {
+                        highlightDataSeries: true
+                    },
+                    onItemClick: {
+                        toggleDataSeries: false
+                    }
+                },
+                markers: {
+                    size: 0,
+                    hover: {
+                        size: 5
+                    }
+                },
+                grid: {
+                    borderColor: '#e5e7eb'
+                }
+            };
+
+            this.chart = new ApexCharts(chartElement, options);
+            this.chart.render();
+        }
+    }
+}
+</script>
+
+<style>
+/* Ensure search dropdown appears above other elements */
+#team-search {
+    position: relative;
+    z-index: 1;
+}
+
+/* noUiSlider customization */
+.noUi-connect {
+    background: #6366F1;
+}
+
+.noUi-handle {
+    border: 1px solid #6366F1;
+    background: white;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.noUi-handle:hover {
+    background: #F9FAFB;
+}
+
+.noUi-tooltip {
+    font-size: 12px;
+    padding: 2px 6px;
+    background: #374151;
+    color: white;
+    border: none;
+}
+</style>
+{% endblock %}

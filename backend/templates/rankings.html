@@ -108,8 +108,7 @@
                                     <span x-text="team.rank"></span>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="text-sm font-medium text-gray-900" x-text="team.team"></span>
-                                    <!-- TODO: Add team_id to API response to enable links -->
+                                    <a :href="`/team/${team.team_id}${selectedLeague !== 'all' ? '?league=' + selectedLeague : ''}`" class="text-sm font-medium text-indigo-600 hover:text-indigo-500" x-text="team.team"></a>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                     <span x-text="team.country"></span>

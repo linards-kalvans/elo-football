@@ -38,9 +38,17 @@
                                class="{% if request.url.path == '/' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                                 Rankings
                             </a>
+                            <a href="/compare"
+                               class="{% if request.url.path == '/compare' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Compare
+                            </a>
                             <a href="/predict"
                                class="{% if request.url.path == '/predict' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                                 Predict
+                            </a>
+                            <a href="/fixtures"
+                               class="{% if request.url.path == '/fixtures' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Fixtures
                             </a>
                         </div>
                     </div>

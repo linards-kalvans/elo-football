@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}Match Prediction - Football Elo Ratings{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div x-data="predictPage()">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">Match Prediction</h1>
+            <p class="mt-2 text-sm text-gray-500">
+                Select two teams to predict match outcome probabilities based on Elo ratings
+            </p>
+        </div>
+
+        <!-- Team Selection -->
+        <div class="bg-white shadow sm:rounded-lg mb-6">
+            <div class="px-4 py-5 sm:p-6">
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                    <!-- Home Team -->
+                    <div class="md:col-span-2 relative">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Home Team</label>
+                        <input
+                            type="text"
+                            x-model="homeQuery"
+                            @input.debounce.300ms="searchHome"
+                            @focus="showHomeResults = true"
+                            :placeholder="homeTeam ? homeTeam.name : 'Search team...'"
+                            :class="homeTeam ? 'border-green-300 bg-green-50' : 'border-gray-300'"
+                            class="block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        />
+                        <div x-show="homeTeam" class="mt-1 text-xs text-green-600" x-text="homeTeam?.name"></div>
+
+                        <!-- Home search results -->
+                        <div
+                            x-show="showHomeResults && homeResults.length > 0"
+                            @click.away="showHomeResults = false"
+                            class="absolute z-20 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto sm:text-sm"
+                        >
+                            <template x-for="result in homeResults" :key="result.id">
+                                <div
+                                    @click="selectHome(result)"
+                                    class="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-indigo-50"
+                                >
+                                    <span class="font-medium block truncate" x-text="result.name"></span>
+                                    <span class="text-gray-500 text-xs" x-text="result.country"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- VS -->
+                    <div class="flex justify-center items-center">
+                        <span class="text-lg font-bold text-gray-400">vs</span>
+                    </div>
+
+                    <!-- Away Team -->
+                    <div class="md:col-span-2 relative">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Away Team</label>
+                        <input
+                            type="text"
+                            x-model="awayQuery"
+                            @input.debounce.300ms="searchAway"
+                            @focus="showAwayResults = true"
+                            :placeholder="awayTeam ? awayTeam.name : 'Search team...'"
+                            :class="awayTeam ? 'border-green-300 bg-green-50' : 'border-gray-300'"
+                            class="block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        />
+                        <div x-show="awayTeam" class="mt-1 text-xs text-green-600" x-text="awayTeam?.name"></div>
+
+                        <!-- Away search results -->
+                        <div
+                            x-show="showAwayResults && awayResults.length > 0"
+                            @click.away="showAwayResults = false"
+                            class="absolute z-20 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto sm:text-sm"
+                        >
+                            <template x-for="result in awayResults" :key="result.id">
+                                <div
+                                    @click="selectAway(result)"
+                                    class="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-indigo-50"
+                                >
+                                    <span class="font-medium block truncate" x-text="result.name"></span>
+                                    <span class="text-gray-500 text-xs" x-text="result.country"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error message -->
+                <div x-show="validationError" x-cloak class="mt-3 text-sm text-red-600" x-text="validationError"></div>
+
+                <!-- Predict Button -->
+                <div class="mt-6 text-center">
+                    <button
+                        @click="predict"
+                        :disabled="!homeTeam || !awayTeam || loading"
+                        class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <span x-show="!loading">Predict Match</span>
+                        <span x-show="loading" class="inline-flex items-center">
+                            <svg class="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Predicting...
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Prediction Results -->
+        <div x-show="prediction" x-cloak class="bg-white shadow sm:rounded-lg">
+            <div class="px-4 py-5 sm:p-6">
+                <!-- Team ratings -->
+                <div class="grid grid-cols-3 gap-4 mb-8 text-center">
+                    <div>
+                        <div class="text-lg font-bold text-gray-900" x-text="prediction?.home_team"></div>
+                        <div class="text-3xl font-bold text-indigo-600" x-text="Math.round(prediction?.home_rating || 0)"></div>
+                        <div class="text-sm text-gray-500">Elo Rating</div>
+                    </div>
+                    <div class="flex flex-col items-center justify-center">
+                        <div class="text-sm text-gray-500">Rating Difference</div>
+                        <div class="text-2xl font-bold" :class="prediction?.rating_diff > 0 ? 'text-green-600' : prediction?.rating_diff < 0 ? 'text-red-600' : 'text-gray-600'"
+                             x-text="(prediction?.rating_diff > 0 ? '+' : '') + Math.round(prediction?.rating_diff || 0)"></div>
+                    </div>
+                    <div>
+                        <div class="text-lg font-bold text-gray-900" x-text="prediction?.away_team"></div>
+                        <div class="text-3xl font-bold text-indigo-600" x-text="Math.round(prediction?.away_rating || 0)"></div>
+                        <div class="text-sm text-gray-500">Elo Rating</div>
+                    </div>
+                </div>
+
+                <!-- Probability Bars -->
+                <div class="space-y-4">
+                    <!-- Home Win -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-medium text-gray-700">Home Win</span>
+                            <span class="text-sm font-bold text-green-600" x-text="((prediction?.p_home || 0) * 100).toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-6 overflow-hidden">
+                            <div class="bg-green-500 h-6 rounded-full transition-all duration-700 ease-out flex items-center justify-end pr-2"
+                                 :style="`width: ${(prediction?.p_home || 0) * 100}%`">
+                                <span class="text-xs font-bold text-white" x-show="(prediction?.p_home || 0) > 0.1"
+                                      x-text="((prediction?.p_home || 0) * 100).toFixed(1) + '%'"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Draw -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-medium text-gray-700">Draw</span>
+                            <span class="text-sm font-bold text-gray-600" x-text="((prediction?.p_draw || 0) * 100).toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-6 overflow-hidden">
+                            <div class="bg-gray-500 h-6 rounded-full transition-all duration-700 ease-out flex items-center justify-end pr-2"
+                                 :style="`width: ${(prediction?.p_draw || 0) * 100}%`">
+                                <span class="text-xs font-bold text-white" x-show="(prediction?.p_draw || 0) > 0.1"
+                                      x-text="((prediction?.p_draw || 0) * 100).toFixed(1) + '%'"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Away Win -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-medium text-gray-700">Away Win</span>
+                            <span class="text-sm font-bold text-red-600" x-text="((prediction?.p_away || 0) * 100).toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-6 overflow-hidden">
+                            <div class="bg-red-500 h-6 rounded-full transition-all duration-700 ease-out flex items-center justify-end pr-2"
+                                 :style="`width: ${(prediction?.p_away || 0) * 100}%`">
+                                <span class="text-xs font-bold text-white" x-show="(prediction?.p_away || 0) > 0.1"
+                                      x-text="((prediction?.p_away || 0) * 100).toFixed(1) + '%'"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error state -->
+        <div x-show="error" x-cloak class="rounded-md bg-red-50 p-4">
+            <div class="flex">
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">Prediction error</h3>
+                    <p class="mt-2 text-sm text-red-700" x-text="error"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function predictPage() {
+    return {
+        homeTeam: null,
+        awayTeam: null,
+        homeQuery: '',
+        awayQuery: '',
+        homeResults: [],
+        awayResults: [],
+        showHomeResults: false,
+        showAwayResults: false,
+        prediction: null,
+        loading: false,
+        error: null,
+        validationError: null,
+
+        async searchHome() {
+            if (this.homeQuery.length < 2) { this.homeResults = []; return; }
+            try {
+                const r = await fetch(`/api/search?q=${encodeURIComponent(this.homeQuery)}&limit=8`);
+                if (r.ok) {
+                    const data = await r.json();
+                    this.homeResults = data.results;
+                    this.showHomeResults = true;
+                }
+            } catch (err) { console.error(err); }
+        },
+
+        async searchAway() {
+            if (this.awayQuery.length < 2) { this.awayResults = []; return; }
+            try {
+                const r = await fetch(`/api/search?q=${encodeURIComponent(this.awayQuery)}&limit=8`);
+                if (r.ok) {
+                    const data = await r.json();
+                    this.awayResults = data.results;
+                    this.showAwayResults = true;
+                }
+            } catch (err) { console.error(err); }
+        },
+
+        selectHome(team) {
+            this.homeTeam = team;
+            this.homeQuery = '';
+            this.homeResults = [];
+            this.showHomeResults = false;
+            this.validationError = null;
+            this.prediction = null;
+        },
+
+        selectAway(team) {
+            this.awayTeam = team;
+            this.awayQuery = '';
+            this.awayResults = [];
+            this.showAwayResults = false;
+            this.validationError = null;
+            this.prediction = null;
+        },
+
+        async predict() {
+            if (!this.homeTeam || !this.awayTeam) return;
+
+            if (this.homeTeam.id === this.awayTeam.id) {
+                this.validationError = 'Please select two different teams';
+                return;
+            }
+
+            this.loading = true;
+            this.error = null;
+            this.validationError = null;
+            this.prediction = null;
+
+            try {
+                const r = await fetch(`/api/predict?home=${this.homeTeam.id}&away=${this.awayTeam.id}`);
+                if (!r.ok) {
+                    const errData = await r.json();
+                    throw new Error(errData.message || `HTTP ${r.status}`);
+                }
+                this.prediction = await r.json();
+            } catch (err) {
+                this.error = err.message;
+            } finally {
+                this.loading = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

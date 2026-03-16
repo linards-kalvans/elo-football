@@ -380,3 +380,100 @@ class TestGetRatingsAt:
         assert "TeamA" in ratings
         assert "TeamB" in ratings
         assert "NewTeam" not in ratings  # hasn't appeared yet
+
+
+# ---------------------------------------------------------------------------
+# Additional edge cases
+# ---------------------------------------------------------------------------
+class TestExtremeScorelines:
+    """Test with extreme goal differences."""
+
+    def test_10_0_scoreline(self, engine: EloEngine) -> None:
+        """10-0 win should produce large but finite delta."""
+        new_h, new_a, dh, da = engine.elo_update(1500, 1500, "H", 10, 0)
+        assert math.isfinite(dh)
+        assert dh > 0
+        assert abs(dh) > abs(engine.elo_update(1500, 1500, "H", 1, 0)[2])
+
+    def test_0_10_scoreline(self, engine: EloEngine) -> None:
+        """0-10 away win should produce large negative delta for home."""
+        _, _, dh, da = engine.elo_update(1500, 1500, "A", 0, 10)
+        assert dh < 0
+        assert da > 0
+        assert math.isfinite(dh)
+
+    def test_20_19_scoreline(self, engine: EloEngine) -> None:
+        """Absurd scoreline still produces valid output."""
+        new_h, new_a, dh, da = engine.elo_update(1500, 1500, "H", 20, 19)
+        assert math.isfinite(new_h)
+        assert math.isfinite(new_a)
+        assert dh > 0  # home won
+
+    def test_0_0_draw_no_mov(self, engine: EloEngine) -> None:
+        """0-0 draw should use base K (no MoV multiplier)."""
+        _, _, dh, _ = engine.elo_update(1500, 1500, "D", 0, 0)
+        assert math.isfinite(dh)
+
+
+class TestLongTimeGaps:
+    """Test time decay with very long gaps."""
+
+    def test_10_year_gap(self, engine: EloEngine) -> None:
+        """Rating should decay significantly over 10 years."""
+        ratings = {"TeamA": 1800.0}
+        last = {"TeamA": pd.Timestamp("2010-01-01")}
+        engine.apply_time_decay("TeamA", pd.Timestamp("2020-01-01"), ratings, last)
+        # Should be closer to 1500 after 10 years (with decay_rate=0.95)
+        assert ratings["TeamA"] < 1750
+
+    def test_1_day_gap_minimal_decay(self, engine: EloEngine) -> None:
+        """1-day gap should barely affect rating."""
+        ratings = {"TeamA": 1700.0}
+        last = {"TeamA": pd.Timestamp("2024-01-01")}
+        engine.apply_time_decay("TeamA", pd.Timestamp("2024-01-02"), ratings, last)
+        assert ratings["TeamA"] > 1699
+
+    def test_negative_time_gap_no_decay(self, engine: EloEngine) -> None:
+        """Negative gap (match before last match) should not decay."""
+        ratings = {"TeamA": 1700.0}
+        last = {"TeamA": pd.Timestamp("2024-06-01")}
+        engine.apply_time_decay("TeamA", pd.Timestamp("2024-01-01"), ratings, last)
+        assert ratings["TeamA"] == 1700.0
+
+
+class TestRatingFloor:
+    """Test behavior at extreme low ratings."""
+
+    def test_very_low_rating_team(self, engine: EloEngine) -> None:
+        """Team with rating near 0 should still produce valid updates."""
+        new_h, new_a, dh, da = engine.elo_update(100, 1500, "A", 0, 5)
+        assert math.isfinite(new_h)
+        assert math.isfinite(new_a)
+        assert new_h < 100  # home lost, should go even lower
+
+    def test_very_high_vs_very_low(self, engine: EloEngine) -> None:
+        """Extreme rating gap should not produce NaN."""
+        new_h, new_a, dh, da = engine.elo_update(2500, 500, "H", 5, 0)
+        assert math.isfinite(new_h)
+        assert math.isfinite(new_a)
+        # Expected win by favorite → small delta
+        assert abs(dh) < 5
+
+
+class TestTierBoundary:
+    """Test tier weight edge cases."""
+
+    def test_unknown_tier_defaults_to_1(self) -> None:
+        """Unknown tier should use weight 1.0."""
+        from src.config import EloSettings
+        s = EloSettings()
+        assert s.tier_weight(99) == 1.0
+        assert s.tier_weight(0) == 1.0
+
+    def test_tier_1_vs_tier_5_ratio(self) -> None:
+        """Tier 1 update should be 1.5x tier 5."""
+        from src.config import EloSettings
+        engine = EloEngine(EloSettings())
+        _, _, dh_t1, _ = engine.elo_update(1500, 1500, "H", 1, 0, tier=1)
+        _, _, dh_t5, _ = engine.elo_update(1500, 1500, "H", 1, 0, tier=5)
+        assert abs(dh_t1 / dh_t5) == pytest.approx(1.5, abs=0.01)

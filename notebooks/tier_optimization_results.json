@@ -1,0 +1,55 @@
+{
+  "baseline": {
+    "tier_1_weight": 1.5,
+    "tier_2_weight": 1.2,
+    "tier_3_weight": 1.2,
+    "tier_4_weight": 1.0,
+    "tier_5_weight": 1.0,
+    "log_likelihood": -19960.755,
+    "avg_ll_per_match": -0.987765,
+    "n_eval_matches": 20208
+  },
+  "optimized": {
+    "tier_1_weight": 1.0664,
+    "tier_2_weight": 1.0501,
+    "tier_3_weight": 1.0177,
+    "tier_4_weight": 1.005,
+    "tier_5_weight": 1.0,
+    "log_likelihood": -19957.8406,
+    "avg_ll_per_match": -0.987621,
+    "n_eval_matches": 20208
+  },
+  "improvement": {
+    "absolute": 2.9144,
+    "percentage": 0.0146,
+    "meaningful": false
+  },
+  "cross_validation": [
+    {
+      "validation_period": "2019-08-01 to 2026-12-31",
+      "n_matches": 14355,
+      "baseline_ll": -14272.0,
+      "optimized_ll": -14271.15,
+      "improvement_pct": 0.0059
+    },
+    {
+      "validation_period": "2021-08-01 to 2026-12-31",
+      "n_matches": 10356,
+      "baseline_ll": -10281.07,
+      "optimized_ll": -10280.65,
+      "improvement_pct": 0.0041
+    },
+    {
+      "validation_period": "2023-08-01 to 2026-12-31",
+      "n_matches": 5893,
+      "baseline_ll": -5825.16,
+      "optimized_ll": -5824.25,
+      "improvement_pct": 0.0156
+    }
+  ],
+  "optimization": {
+    "n_trials": 150,
+    "n_completed": 150,
+    "sampler": "TPESampler(seed=42)"
+  }
+}

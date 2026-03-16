@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+
+{% block title %}{{ team_name }} - Football Elo Ratings{% endblock %}
+
+{% block extra_head %}
+<!-- ApexCharts -->
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.1/dist/apexcharts.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div x-data="teamPage({{ team_id }})">
+        <!-- Loading state -->
+        <div x-show="loading" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <p class="mt-2 text-sm text-gray-500">Loading team data...</p>
+        </div>
+
+        <!-- Error state -->
+        <div x-show="error" x-cloak class="rounded-md bg-red-50 p-4 mb-6">
+            <div class="flex">
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">Error loading team data</h3>
+                    <p class="mt-2 text-sm text-red-700" x-text="error"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main content -->
+        <div x-show="!loading && !error" x-cloak>
+            <!-- Breadcrumb -->
+            <nav class="flex mb-6" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-4">
+                    <li>
+                        <a href="/" class="text-gray-400 hover:text-gray-500">
+                            <span>Rankings</span>
+                        </a>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <svg class="flex-shrink-0 h-5 w-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span class="ml-4 text-sm font-medium text-gray-500" x-text="team.name"></span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+
+            <!-- Team info card -->
+            <div class="bg-white shadow sm:rounded-lg mb-6">
+                <div class="px-4 py-5 sm:p-6">
+                    <div class="sm:flex sm:items-center sm:justify-between">
+                        <div>
+                            <h1 class="text-3xl font-bold text-gray-900" x-text="team.name"></h1>
+                            <p class="mt-1 text-sm text-gray-500">
+                                <span x-text="team.country"></span>
+                                <template x-if="team.aliases && team.aliases.length > 0">
+                                    <span class="text-gray-400">
+                                        · Also known as: <span x-text="team.aliases.join(', ')"></span>
+                                    </span>
+                                </template>
+                            </p>
+                        </div>
+                        <div class="mt-4 sm:mt-0 sm:ml-6 sm:flex-shrink-0 text-right">
+                            <div class="text-sm font-medium text-gray-500">Current Rating</div>
+                            <div class="mt-1 text-4xl font-bold text-gray-900" x-text="Math.round(team.current_rating)"></div>
+                            <div class="mt-1 text-sm text-gray-500">
+                                Rank #<span x-text="team.rank"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- League context actions -->
+                    {% if league and league_name %}
+                    <div class="mt-4 pt-4 border-t border-gray-200">
+                        <a href="/compare?league={{ league }}"
+                           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            <svg class="mr-2 -ml-1 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                            </svg>
+                            Compare with other {{ league_name }} teams
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Stats Card -->
+            <div x-show="stats" class="bg-white shadow sm:rounded-lg mb-6">
+                <div class="px-4 py-5 sm:p-6">
+                    <h2 class="text-lg font-medium text-gray-900 mb-4">Team Statistics</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                        <!-- Form -->
+                        <div>
+                            <div class="text-sm font-medium text-gray-500 mb-1">Last 5 Form</div>
+                            <div class="flex space-x-1">
+                                <template x-for="(r, i) in (stats?.form || [])" :key="i">
+                                    <span :class="{
+                                        'inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold': true,
+                                        'bg-green-100 text-green-800': r === 'W',
+                                        'bg-gray-100 text-gray-800': r === 'D',
+                                        'bg-red-100 text-red-800': r === 'L'
+                                    }" x-text="r"></span>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- 30-day trend -->
+                        <div>
+                            <div class="text-sm font-medium text-gray-500 mb-1">30-Day Trend</div>
+                            <div class="text-2xl font-bold"
+                                 :class="(stats?.trend_30d || 0) > 0 ? 'text-green-600' : (stats?.trend_30d || 0) < 0 ? 'text-red-600' : 'text-gray-600'"
+                                 x-text="((stats?.trend_30d || 0) > 0 ? '+' : '') + (stats?.trend_30d || 0).toFixed(1)"></div>
+                        </div>
+
+                        <!-- Peak -->
+                        <div>
+                            <div class="text-sm font-medium text-gray-500 mb-1">Peak Rating</div>
+                            <div class="text-2xl font-bold text-gray-900" x-text="Math.round(stats?.peak_rating || 0)"></div>
+                            <div class="text-xs text-gray-400" x-text="stats?.peak_date"></div>
+                        </div>
+
+                        <!-- Trough -->
+                        <div>
+                            <div class="text-sm font-medium text-gray-500 mb-1">Lowest Rating</div>
+                            <div class="text-2xl font-bold text-gray-900" x-text="Math.round(stats?.trough_rating || 0)"></div>
+                            <div class="text-xs text-gray-400" x-text="stats?.trough_date"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Elo rating chart -->
+            <div class="bg-white shadow sm:rounded-lg mb-6">
+                <div class="px-4 py-5 sm:p-6">
+                    <h2 class="text-lg font-medium text-gray-900 mb-4">Elo Rating History</h2>
+                    <div id="ratingChart" style="min-height: 400px;"></div>
+                </div>
+            </div>
+
+            <!-- Recent matches -->
+            <div class="bg-white shadow sm:rounded-lg">
+                <div class="px-4 py-5 sm:p-6 border-b border-gray-200">
+                    <h2 class="text-lg font-medium text-gray-900">Recent Matches</h2>
+                    <p class="mt-1 text-sm text-gray-500">
+                        Last 10 matches with Elo rating changes
+                    </p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Date
+                                </th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Match
+                                </th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Score
+                                </th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Result
+                                </th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Competition
+                                </th>
+                                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Elo Change
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-for="(match, idx) in enrichedResults" :key="idx">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <span x-text="match.date"></span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        <span x-text="match.home_team"></span>
+                                        <span class="text-gray-400">vs</span>
+                                        <span x-text="match.away_team"></span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        <span x-text="`${match.home_goals} - ${match.away_goals}`"></span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                        <span
+                                            :class="{
+                                                'px-2 inline-flex text-xs leading-5 font-semibold rounded-full': true,
+                                                'bg-green-100 text-green-800': match.team_result === 'W',
+                                                'bg-gray-100 text-gray-800': match.team_result === 'D',
+                                                'bg-red-100 text-red-800': match.team_result === 'L'
+                                            }"
+                                            x-text="match.team_result"
+                                        ></span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <span x-text="match.competition"></span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-mono">
+                                        <span
+                                            :class="{
+                                                'font-semibold': true,
+                                                'text-green-600': match.elo_change > 0,
+                                                'text-red-600': match.elo_change < 0,
+                                                'text-gray-500': match.elo_change === 0
+                                            }"
+                                            x-text="match.elo_change > 0 ? `+${match.elo_change.toFixed(1)}` : match.elo_change.toFixed(1)"
+                                        ></span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+
+                    <!-- Empty state -->
+                    <div x-show="enrichedResults.length === 0" class="text-center py-12">
+                        <p class="text-sm text-gray-500">No recent matches found</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function teamPage(teamId) {
+    return {
+        team: {},
+        history: [],
+        stats: null,
+        enrichedResults: [],
+        loading: true,
+        error: null,
+        chart: null,
+
+        async init() {
+            await Promise.all([
+                this.loadTeamData(),
+                this.loadHistory(),
+                this.loadResults(),
+            ]);
+            this.loading = false;
+            if (!this.error) {
+                this.$nextTick(() => this.renderChart());
+            }
+        },
+
+        async loadTeamData() {
+            try {
+                const response = await fetch(`/api/teams/${teamId}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                this.team = await response.json();
+            } catch (err) {
+                this.error = err.message;
+            }
+        },
+
+        async loadHistory() {
+            try {
+                const response = await fetch(`/api/teams/${teamId}/history`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                this.history = data.history;
+            } catch (err) {
+                this.error = err.message;
+            }
+        },
+
+        async loadResults() {
+            try {
+                const response = await fetch(`/api/teams/${teamId}/results?limit=10`);
+                if (!response.ok) return; // Non-critical, fallback gracefully
+
+                const data = await response.json();
+                this.stats = data.stats;
+                this.enrichedResults = data.results;
+            } catch (err) {
+                // Results API is non-critical
+                console.error('Failed to load results:', err);
+            }
+        },
+
+        renderChart() {
+            const chartElement = document.getElementById('ratingChart');
+            if (!chartElement || this.history.length === 0) return;
+
+            if (this.chart) {
+                this.chart.destroy();
+            }
+
+            // Default to last 5 years
+            const now = new Date();
+            const fiveYearsAgo = new Date(now);
+            fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+
+            const filteredHistory = this.history.filter(h => {
+                const date = new Date(h.date);
+                return date >= fiveYearsAgo;
+            });
+
+            const series = [{
+                name: 'Elo Rating',
+                data: filteredHistory.map(h => ({
+                    x: new Date(h.date).getTime(),
+                    y: Math.round(h.rating)
+                }))
+            }];
+
+            const options = {
+                series: series,
+                chart: {
+                    type: 'area',
+                    height: 400,
+                    animations: {
+                        enabled: true,
+                        speed: 400
+                    },
+                    toolbar: {
+                        show: true,
+                        tools: {
+                            download: true,
+                            zoom: true,
+                            zoomin: true,
+                            zoomout: true,
+                            pan: true,
+                            reset: true
+                        }
+                    }
+                },
+                colors: ['#6366F1'],
+                stroke: {
+                    width: 2,
+                    curve: 'smooth'
+                },
+                fill: {
+                    type: 'gradient',
+                    gradient: {
+                        shadeIntensity: 1,
+                        opacityFrom: 0.4,
+                        opacityTo: 0.1,
+                        stops: [0, 90, 100]
+                    }
+                },
+                xaxis: {
+                    type: 'datetime',
+                    labels: {
+                        format: 'MMM yyyy'
+                    }
+                },
+                yaxis: {
+                    title: {
+                        text: 'Elo Rating'
+                    },
+                    labels: {
+                        formatter: (value) => Math.round(value)
+                    }
+                },
+                tooltip: {
+                    x: {
+                        format: 'dd MMM yyyy'
+                    },
+                    y: {
+                        formatter: (value) => Math.round(value)
+                    }
+                },
+                markers: {
+                    size: 0,
+                    hover: {
+                        size: 5
+                    }
+                },
+                grid: {
+                    borderColor: '#e5e7eb'
+                },
+                annotations: {
+                    yaxis: [
+                        {
+                            y: this.team.current_rating,
+                            borderColor: '#6366F1',
+                            label: {
+                                borderColor: '#6366F1',
+                                style: {
+                                    color: '#fff',
+                                    background: '#6366F1'
+                                },
+                                text: 'Current: ' + Math.round(this.team.current_rating)
+                            }
+                        }
+                    ]
+                }
+            };
+
+            this.chart = new ApexCharts(chartElement, options);
+            this.chart.render();
+        }
+    }
+}
+</script>
+{% endblock %}
