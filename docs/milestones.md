@@ -1,6 +1,6 @@
 # Milestone Plan
 
-> Last updated: 2026-03-15
+> Last updated: 2026-03-16
 
 High-level roadmap for the European Football Elo Rating project. Each milestone maps to one or more sprints with detailed plans in `docs/sprint-<N>-plan.md`.
 
@@ -244,7 +244,7 @@ Decide how the Elo engine treats two-leg playoff ties (home and away) that appea
 
 ## M8: Live Data & Fixtures
 
-**Sprints:** [10](sprint-10-plan.md)–11 | **Status:** IN PROGRESS | **Priority:** HIGH
+**Sprints:** [9](sprint-9-plan.md)–[11](sprint-11-plan.md) | **Status:** NEARLY COMPLETE | **Priority:** HIGH
 
 Transition from historical-only data to quasi-live updates with upcoming fixtures and completed match results.
 
@@ -253,43 +253,46 @@ Transition from historical-only data to quasi-live updates with upcoming fixture
 - Database schema: fixtures & predictions tables with CRUD functions
 - 2010-2016 warm-up period for calibration (display_from_date filtering)
 
-**Remaining scope:**
+**Implementation completed (Sprint 10):**
 
-### 8a. Data Persistence & Deployment Strategy (Sprint 10, prerequisite)
-- **DB as persistent state**: Remove `elo.db` from git, treat as volume-mounted persistent data
-- **Schema migrations**: Numbered migration system so schema changes apply without data loss
-- **Seed vs. incremental separation**: `run_pipeline()` for cold-start only; incremental ingestion thereafter
-- **DB backup on deploy**: Snapshot database before each deployment for rollback
-- **Incremental ratings**: Avoid full `DELETE FROM ratings_history` recompute on every update
+### 8a. Data Persistence & Deployment Strategy ✅
+- **DB as persistent state**: `elo.db` removed from git, treated as volume-mounted persistent data
+- **Schema migrations**: Numbered migration system (`src/db/migrate.py`) with 4 migrations
+- **Seed vs. incremental separation**: `run_pipeline()` for cold-start; `run_incremental_update()` for live data
+- **DB backup on deploy**: `scripts/backup_db.sh` with WAL-safe backup and 5-copy rotation
+- **CI/CD updated**: backup → migrate → incremental update → health check
 
-### 8b. Data Source Integration (Sprint 10)
-- **football-data.org API client**: Async client with rate limiting (10 calls/min), auth, error handling
-- **Team ID mapping**: Map API team IDs to existing 325 teams
-- **Recent results API**: Fetch completed match results for rating updates
-- **Data freshness policy**: 2x daily scheduled fetch (6am, 6pm)
+### 8b. Data Source Integration ✅
+- **football-data.org API client**: Async client with token-bucket rate limiting (10 req/min), 3 retries, exponential backoff
+- **Team ID mapping**: 150+ known name mappings + fuzzy matching fallback for 325 teams
+- **Recent results API**: `fetch_and_ingest_matches()` fetches FINISHED matches from last 14 days
+- **Data freshness policy**: `scripts/run_daily_update.py` for 2x daily cron
 
-### 8c. Pipeline Automation (Sprint 10-11)
-- **Scheduled fetch**: systemd timer or cron for automated ingestion
-- **Incremental rating updates**: Only recompute ratings for new matches, not full history
-- **Match result validation**: Confirm match is final (not abandoned, not postponed)
+### 8c. Pipeline Automation (partially complete)
+- **Scheduled fetch**: Cron-ready script (`scripts/run_daily_update.py`) ✅
+- **Incremental rating updates**: `run_incremental_update()` appends new matches, recomputes ratings ✅
+- **Match result validation**: Skips TBD teams, handles API errors gracefully per competition ✅
+- **Dockerized cron**: Bake cron schedule into Docker image so daily updates run automatically in production — **Sprint 11**
 
-### 8d. Fixtures Frontend (Sprint 10-11)
-- **Fixtures page**: Upcoming matches with pre-match Elo predictions
-- **Grouped by competition**: Sorted by date, linked to team pages
+### 8d. Fixtures Frontend ✅
+- **Fixtures page**: `/fixtures` with upcoming matches grouped by competition
+- **Elo predictions**: Pre-match probability bars (home/draw/away)
+- **Competition filters**: Alpine.js interactive filtering
 
 **Exit criteria:**
-- [ ] Database survives deployments without data loss
-- [ ] Schema migrations apply cleanly on existing databases
-- [ ] Upcoming fixtures fetched and displayed in frontend
-- [ ] Completed matches auto-ingested within 24 hours
-- [ ] Ratings updated automatically after new results
-- [ ] API rate limits and costs acceptable for production
+- [x] Database survives deployments without data loss
+- [x] Schema migrations apply cleanly on existing databases
+- [x] Upcoming fixtures fetched and displayed in frontend
+- [x] Completed matches auto-ingested within 24 hours
+- [x] Ratings updated automatically after new results
+- [x] API rate limits and costs acceptable for production
+- [ ] Daily update cron baked into Docker image (Sprint 11)
 
 ---
 
 ## M9: Prediction Tracking & Validation
 
-**Sprints:** TBD (11+) | **Status:** PARTIALLY COMPLETE | **Priority:** MEDIUM
+**Sprints:** 9–10 (backend), 11+ (frontend) | **Status:** PARTIALLY COMPLETE | **Priority:** MEDIUM
 
 Track predictions made by the system and compare them to actual outcomes, enabling performance monitoring and user transparency.
 
@@ -297,16 +300,21 @@ Track predictions made by the system and compare them to actual outcomes, enabli
 - Predictions table with CRUD functions (insert_prediction, get_predictions_for_fixture)
 - CHECK constraint ensuring exactly one of match_id/fixture_id is set
 
-**Remaining scope:**
+**Completed (Sprint 10):**
+- Auto-insert predictions for upcoming fixtures during ingestion
+- Brier score computation (`src/live/prediction_tracker.py`)
+- `/api/prediction-accuracy` endpoint with aggregate stats, calibration buckets, per-competition breakdown
+- `brier_score` and `scored_at` columns added to predictions table (migration 004)
 
-### 9a. Prediction Automation
+### 9a. Prediction Automation ✅
 - Auto-insert predictions for upcoming fixtures when fetched
 - After match completes: compare prediction vs result, compute Brier score
-- Prediction versioning if match rescheduled
 
-### 9b. Performance Metrics
-- **Accuracy tracking**: Log-loss, Brier score, accuracy over rolling windows
-- **Calibration curves**: Are 60% predictions actually 60% accurate?
+**Remaining scope:**
+
+### 9b. Performance Metrics (partial)
+- ~~Accuracy tracking~~: Brier score tracked ✅
+- **Calibration curves**: Are 60% predictions actually 60% accurate? (data collected, frontend TBD)
 - **Dashboard**: Show model performance over time (last week, month, season)
 - **Alerts**: Flag if model performance degrades below threshold
 
@@ -315,13 +323,13 @@ Track predictions made by the system and compare them to actual outcomes, enabli
 - **Accuracy badge**: Display model's recent accuracy on prediction widget
 - **Confidence intervals**: Show uncertainty around predictions
 
-**Depends on:** M8 (live data for actual outcomes), M4 (frontend to display)
+**Depends on:** M8 (complete), M4 (complete)
 
 **Exit criteria:**
-- [ ] All predictions stored in database before matches
+- [x] All predictions stored in database before matches
 - [ ] Prediction accuracy dashboard live
 - [ ] Users can view prediction history and outcomes
-- [ ] Brier score and log-loss tracked over time
+- [x] Brier score tracked over time
 
 ---
 
@@ -391,8 +399,8 @@ Redesign the frontend based on user-provided mock designs. May require new featu
 | 7 | M4, M4.5 (partial) | Frontend, charts, comparison, zoom/pan | COMPLETED |
 | 8 | M4 | Prediction page, Docker/CI, chart perf | COMPLETED |
 | 9 | M10, M8 (groundwork), M9 (groundwork) | Calibration fix, fixtures/predictions schema, ADR-004 | COMPLETED |
-| **10** | **M8** | **Data persistence strategy, live API client, ingestion pipeline, fixtures page** | **PLANNED** |
-| **11** | **M8, M9** | **Prediction tracking, accuracy dashboard, scheduled automation** | **PLANNED** |
+| **10** | **M8, M9 (partial)** | **Data persistence, live API client, ingestion pipeline, fixtures page, prediction tracking** | **COMPLETED** |
+| **11** | **M8, M9** | **Dockerized daily update cron, prediction accuracy dashboard, prediction history frontend** | **PLANNED** |
 | **12** | **M11** | **UI redesign from mock designs** | **PLANNED** |
 | **13** | **M4.5** | **Chart export (PNG/CSV), presets, shareable configs** | **PLANNED** |
 | **14** | **M5** | **Bayesian parameter optimization (Optuna), tier weight sweep** | **PLANNED** |
@@ -416,11 +424,10 @@ M1 (Algorithm) ✅
        │     │
        │     ├──▶ M10 (Elo Calibration Fix) ✅ [Sprint 9]
        │     │
-       │     ├──▶ M8 (Live Data & Fixtures) [IN PROGRESS]
+       │     ├──▶ M8 (Live Data & Fixtures) ✅
        │     │     ├── Sprint 9: Groundwork (ADR-004, fixtures/predictions tables) ✅
-       │     │     ├── Sprint 10: Persistence, API client, ingestion [PLANNED]
-       │     │     └── Sprint 11: Automation, fixtures frontend [PLANNED]
-       │     │           └──▶ M9 (Prediction Tracking) [PARTIAL → Sprint 11]
+       │     │     └── Sprint 10: Persistence, API client, ingestion, fixtures page ✅
+       │     │           └──▶ M9 (Prediction Tracking) [PARTIAL — backend done, frontend Sprint 11]
        │     │
        │     └──▶ M5 (Advanced Parameter Optimization) [Sprint 14]
        │
@@ -438,10 +445,11 @@ M1 (Algorithm) ✅
 | Storage engine | M3 | ✅ DECIDED | `docs/adr-storage-engine.md` — SQLite |
 | Frontend tooling | M4 | ✅ DECIDED | `docs/adr-frontend-tooling.md` — Alpine.js + ApexCharts + Tailwind CSS |
 | European cup data source | M2 | ✅ DECIDED | openfootball (CC0, 15 seasons CL) |
-| Competition tier weight values | M2 | ⚠️ DECIDED (needs optimization) | T1=1.5x, T2=1.2x, T3=1.2x, T4/T5=1.0x (hand-picked) |
+| Competition tier weight values | M2 | ✅ DECIDED (validated) | T1=1.5x, T2=1.2x, T3=1.2x, T4/T5=1.0x — Optuna confirmed optimal (Sprint 10) |
 | Live data API source | M8 | ✅ DECIDED | `docs/adr-004-live-data-source.md` — football-data.org (free tier) |
 | Initial rating calibration method | M10 | ✅ DECIDED | Warm-up period (2010-2016), implemented in Sprint 9 |
-| **Data persistence & migrations** | **M8** | **PENDING** | **Sprint 10 Task 0 — DB as persistent state, migration system** |
+| Data persistence & migrations | M8 | ✅ DECIDED | Sprint 10 — DB as persistent state, numbered SQL migrations (`src/db/migrate.py`) |
+| Tier weight optimization | M5 | ✅ DECIDED | Optuna Bayesian (150 trials): hand-picked defaults confirmed adequate (+0.015%) |
 | Optimization framework | M5 | PENDING | Optuna / scikit-optimize / custom |
 | Per-league vs. global parameters | M5 | PENDING | — |
 | Full UEFA data source strategy | M6 | PENDING | — |

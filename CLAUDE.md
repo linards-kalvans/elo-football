@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Elo rating system for European football clubs. The ultimate goal is a **web application** providing current and historical Elo ratings, plus match win-probability predictions.
 
-The project has completed **Sprints 1-9** — a unified Elo engine rates 325 teams across 5 domestic leagues + CL/EL/Conference League (31,789 matches, with 2010-2016 warm-up period for calibration), with a fully documented FastAPI backend, interactive frontend (rankings, team profiles with stats, comparison charts, match predictions), Docker/CI deployment infrastructure, and database schema ready for live data integration. Next: Sprint 10 (live API integration via football-data.org, tier weight optimization).
+The project has completed **Sprints 1-10** — a unified Elo engine rates 325 teams across 5 domestic leagues + CL/EL/Conference League (31,789 matches, with 2010-2016 warm-up period for calibration), with a fully documented FastAPI backend, interactive frontend (rankings, team profiles with stats, comparison charts, match predictions, fixtures), Docker/CI deployment infrastructure, live data integration via football-data.org API, and automated prediction tracking with Brier score validation.
 
 ## Understanding the Code — CRITICAL
 
@@ -24,9 +24,11 @@ The project has completed **Sprints 1-9** — a unified Elo engine rates 325 tea
 ```bash
 uv sync                          # Install dependencies
 uv run python <script>           # Run any script
-uv run pytest tests/ -v          # Run tests (237 passing)
+uv run pytest tests/ -v          # Run tests (363 passing)
 uv run uvicorn backend.main:app --reload  # Start FastAPI backend (port 8000)
 cd data && bash fetch_league_csvs.sh  # Fetch raw match data (2010-2026)
+uv run python scripts/run_daily_update.py  # Fetch live matches & fixtures
+uv run python src/db/migrate.py  # Apply database migrations
 ```
 
 ## Project Structure
@@ -37,13 +39,14 @@ cd data && bash fetch_league_csvs.sh  # Fetch raw match data (2010-2026)
   - `european_data.py` — CL/EL/Conference League parser
   - `team_names.py` — 100+ team name mappings
   - `data_loader.py` — Multi-league CSV loader
-  - `db/` — SQLite database layer (schema, repository, validation)
-  - `pipeline.py` — Idempotent data ingestion pipeline
+  - `db/` — SQLite database layer (schema, repository, validation, migrations)
+  - `pipeline.py` — Idempotent data ingestion pipeline + incremental updates
   - `prediction.py` — Match prediction API
+  - `live/` — Live data integration (football-data.org API client, team mapping, ingestion, prediction tracking)
 - **`backend/`** — FastAPI web application (production-ready)
   - `main.py` — FastAPI app with 10+ REST endpoints, OpenAPI docs
   - `models.py` — Pydantic response models
-  - `templates/` — Jinja2 templates (rankings.html, team.html, compare.html, predict.html, base.html)
+  - `templates/` — Jinja2 templates (rankings.html, team.html, compare.html, predict.html, fixtures.html, base.html)
   - `static/` — Frontend assets (Tailwind CDN, Alpine.js 3.13, ApexCharts 3.45, noUiSlider 15.7)
 - **Deployment** — Docker + CI/CD
   - `Dockerfile` — Multi-stage build with uv
@@ -53,7 +56,8 @@ cd data && bash fetch_league_csvs.sh  # Fetch raw match data (2010-2026)
   - `epl/`, `laliga/`, `bundesliga/`, `seriea/`, `ligue1/` — Domestic league CSVs (Football-Data.co.uk, 2010-2026)
   - `europe/` — CL/EL/Conference League .txt files (openfootball)
   - `elo.db` — SQLite database (325 teams, 31,789 matches, 63K+ rating history records)
-- **`tests/`** — Unit tests (pytest, 237 tests passing)
+- **`scripts/`** — Operational scripts (daily update, DB backup, team mapping builder)
+- **`tests/`** — Unit tests (pytest, 363 tests passing)
 - **`docs/`** — Sprint plans, ADRs, milestones, API documentation
 - **`notebooks/`** — Analysis scripts, parameter sweeps, experiment outputs
 
@@ -75,7 +79,7 @@ cd data && bash fetch_league_csvs.sh  # Fetch raw match data (2010-2026)
 
 ## Known Issues / Tech Debt
 
-- **Tier weight optimization**: Current tier weights are hand-picked, not optimized via sweep (Sprint 10+).
+- **Tier weight optimization**: Validated via Optuna — hand-picked defaults confirmed adequate (+0.015% improvement, not significant).
 - **Two-leg tie modeling**: Knockout ties treated as independent matches (see M7 in milestones).
 
 ## Sprints & Roadmap
@@ -94,7 +98,13 @@ Sprint plans with detailed scope and status are in `docs/sprint-{N}-plan.md`. Hi
   - ✅ API filtering by display_from_date (team history, peak/trough stats)
   - ✅ ADR-004: football-data.org selected for live data (Sprint 10)
   - ✅ 237 tests passing (was 164)
-- Sprint 10: PLANNED (Live API integration via football-data.org, tier weight optimization, fixtures frontend)
+- Sprint 10: COMPLETED (Live API integration via football-data.org, tier weight optimization, fixtures frontend, prediction tracking)
+  - ✅ Schema migration system (4 migrations), incremental update pipeline, DB backup script
+  - ✅ football-data.org async API client with rate limiting and retries
+  - ✅ Team name mapping (150+ known + fuzzy fallback), live ingestion pipeline
+  - ✅ Fixtures page with Elo prediction bars, `/api/prediction-accuracy` endpoint
+  - ✅ Tier weight optimization: Optuna confirmed hand-picked defaults are optimal
+  - ✅ 363 tests passing (was 237)
 
 ## Roles
 
