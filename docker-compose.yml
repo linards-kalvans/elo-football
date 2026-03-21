@@ -19,7 +19,7 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - openclaw_frontend
+      - caddy-net
 
   elokit-cron:
     build: .
@@ -32,5 +32,5 @@ services:
     command: ["python", "scripts/cron_runner.py"]
 
 networks:
-  frontend:
+  caddy-net:
     external: true
