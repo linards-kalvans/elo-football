@@ -18,6 +18,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    networks:
+      - frontend
 
   cron:
     build: .
@@ -28,3 +30,7 @@ services:
       - ELO_DB_PATH=/app/data/elo.db
     restart: unless-stopped
     command: ["python", "scripts/cron_runner.py"]
+
+networks:
+  frontend:
+    external: true
