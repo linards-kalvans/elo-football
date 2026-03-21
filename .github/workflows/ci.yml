@@ -68,7 +68,7 @@ jobs:
             bash scripts/backup_db.sh
 
             # 2. Rebuild and restart containers
-            docker compose up --build -d
+            docker compose up -d --build --force-recreate
 
             # 3. Run schema migrations (safe to run multiple times)
             docker compose exec app python -c "import asyncio; from src.db.migrate import run_migrations; asyncio.run(run_migrations())"
