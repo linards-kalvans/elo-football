@@ -9,7 +9,13 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
 # Install production dependencies only (no dev group)
-RUN uv sync --no-dev --frozen
+ENV UV_LINK_MODE=copy
+ENV UV_PYTHON_CACHE_DIR=/root/.cache/uv/python
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --no-dev --locked --no-install-project
 
 # Stage 2: Runtime
 FROM python:3.12-slim
