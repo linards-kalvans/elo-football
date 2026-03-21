@@ -129,59 +129,73 @@ async def score_completed_matches(db_path: str | Path | None = None) -> dict:
 
 
 async def get_prediction_accuracy(
-    db_path: str | Path | None = None, competition: str | None = None
+    db_path: str | Path | None = None,
+    competition: str | None = None,
+    source: str | None = None,
+    country: str | None = None,
+    team_id: int | None = None,
 ) -> dict:
     """Get aggregate prediction accuracy statistics.
 
     Args:
         db_path: Path to SQLite database. Defaults to data/elo.db.
         competition: Optional competition name to filter by.
+        source: Optional source filter ('live', 'backfill', or None for all).
+        country: Optional country name to filter by.
+        team_id: Optional team ID to filter by.
 
     Returns:
         Dict with total_predictions, mean_brier_score, median_brier_score,
-        calibration buckets, by_competition breakdown, and recent_form.
+        calibration buckets, by_competition breakdown, recent_form, and
+        by_source breakdown.
     """
     path = str(db_path) if db_path else str(get_db_path())
     conn = await aiosqlite.connect(path)
     conn.row_factory = aiosqlite.Row
 
     try:
-        # Build base query for scored predictions
+        # Build WHERE clauses
+        where_parts = ["p.brier_score IS NOT NULL"]
+        params: list = []
+
         if competition:
-            # Join through match->competition or fixture->competition
-            cursor = await conn.execute(
-                """SELECT p.id, p.p_home, p.p_draw, p.p_away, p.brier_score,
-                          COALESCE(m.result, m2.result) as result,
-                          COALESCE(c1.name, c2.name) as comp_name
-                   FROM predictions p
-                   LEFT JOIN matches m ON m.id = p.match_id
-                   LEFT JOIN competitions c1 ON c1.id = m.competition_id
-                   LEFT JOIN fixtures f ON f.id = p.fixture_id
-                   LEFT JOIN matches m2 ON m2.date = f.date
-                       AND m2.home_team_id = f.home_team_id
-                       AND m2.away_team_id = f.away_team_id
-                   LEFT JOIN competitions c2 ON c2.id = f.competition_id
-                   WHERE p.brier_score IS NOT NULL
-                     AND COALESCE(c1.name, c2.name) = ?
-                   ORDER BY p.scored_at ASC""",
-                (competition,),
+            where_parts.append("COALESCE(c1.name, c2.name) = ?")
+            params.append(competition)
+        elif country:
+            where_parts.append("COALESCE(c1.country, c2.country) = ?")
+            params.append(country)
+
+        if team_id is not None:
+            where_parts.append(
+                """(COALESCE(m.home_team_id, f.home_team_id) = ?
+                   OR COALESCE(m.away_team_id, f.away_team_id) = ?)"""
             )
-        else:
-            cursor = await conn.execute(
-                """SELECT p.id, p.p_home, p.p_draw, p.p_away, p.brier_score,
-                          COALESCE(m.result, m2.result) as result,
-                          COALESCE(c1.name, c2.name) as comp_name
-                   FROM predictions p
-                   LEFT JOIN matches m ON m.id = p.match_id
-                   LEFT JOIN competitions c1 ON c1.id = m.competition_id
-                   LEFT JOIN fixtures f ON f.id = p.fixture_id
-                   LEFT JOIN matches m2 ON m2.date = f.date
-                       AND m2.home_team_id = f.home_team_id
-                       AND m2.away_team_id = f.away_team_id
-                   LEFT JOIN competitions c2 ON c2.id = f.competition_id
-                   WHERE p.brier_score IS NOT NULL
-                   ORDER BY p.scored_at ASC"""
-            )
+            params.extend([team_id, team_id])
+
+        if source:
+            where_parts.append("p.source = ?")
+            params.append(source)
+
+        where_sql = " AND ".join(where_parts)
+
+        cursor = await conn.execute(
+            f"""SELECT p.id, p.p_home, p.p_draw, p.p_away, p.brier_score,
+                       p.source, p.scored_at,
+                       COALESCE(m.result, m2.result) as result,
+                       COALESCE(c1.name, c2.name) as comp_name,
+                       COALESCE(m.date, f.date) as match_date
+                FROM predictions p
+                LEFT JOIN matches m ON m.id = p.match_id
+                LEFT JOIN competitions c1 ON c1.id = m.competition_id
+                LEFT JOIN fixtures f ON f.id = p.fixture_id
+                LEFT JOIN matches m2 ON m2.date = f.date
+                    AND m2.home_team_id = f.home_team_id
+                    AND m2.away_team_id = f.away_team_id
+                LEFT JOIN competitions c2 ON c2.id = f.competition_id
+                WHERE {where_sql}
+                ORDER BY COALESCE(m.date, f.date) ASC, p.id ASC""",
+            params,
+        )
 
         rows = await cursor.fetchall()
 
@@ -257,13 +271,246 @@ async def get_prediction_accuracy(
         recent_scores = brier_scores[-100:]
         recent_form = round(statistics.mean(recent_scores), 4)
 
+        # Time series: rolling Brier score (window=50)
+        time_series = _compute_brier_time_series(rows, window=50)
+
+        # By source breakdown
+        by_source: dict[str, list[float]] = {}
+        for row in rows:
+            src = row["source"] or "live"
+            if src not in by_source:
+                by_source[src] = []
+            by_source[src].append(row["brier_score"])
+
+        by_source_stats = {
+            src: {
+                "count": len(scores),
+                "mean_brier_score": round(statistics.mean(scores), 4),
+            }
+            for src, scores in by_source.items()
+        }
+
         return {
             "total_predictions": total,
             "mean_brier_score": round(mean_brier, 4),
             "median_brier_score": round(median_brier, 4),
             "calibration": buckets,
             "by_competition": by_competition_stats,
+            "by_source": by_source_stats,
             "recent_form": recent_form,
+            "time_series": time_series,
+        }
+    finally:
+        await conn.close()
+
+
+def _compute_brier_time_series(
+    rows: list, window: int = 50
+) -> list[dict]:
+    """Compute rolling Brier score time series from scored prediction rows.
+
+    Groups predictions by match date, then computes a rolling average
+    over the specified window of predictions.
+
+    Args:
+        rows: List of Row objects with brier_score and match_date fields.
+            Rows must be ordered by match_date ASC, id ASC.
+        window: Number of predictions in the rolling window.
+
+    Returns:
+        List of dicts with date, rolling_brier, and count fields.
+    """
+    if len(rows) < window:
+        return []
+
+    # Rows are ordered by match_date ASC from the query
+    time_series = []
+    scores = [row["brier_score"] for row in rows]
+
+    # Track the last date we emitted to avoid duplicates
+    last_emitted_date = None
+
+    for i in range(window - 1, len(scores)):
+        window_scores = scores[i - window + 1 : i + 1]
+        rolling_avg = statistics.mean(window_scores)
+
+        # Use match_date for the time axis (not scored_at)
+        match_date = rows[i]["match_date"]
+        if not match_date or len(str(match_date)) < 10:
+            continue
+        point_date = str(match_date)[:10]
+
+        # Only emit one point per date (the last rolling value for that date)
+        if point_date != last_emitted_date:
+            time_series.append({
+                "date": point_date,
+                "rolling_brier": round(rolling_avg, 4),
+                "count": len(window_scores),
+            })
+            last_emitted_date = point_date
+        else:
+            # Update the last entry for this date
+            time_series[-1] = {
+                "date": point_date,
+                "rolling_brier": round(rolling_avg, 4),
+                "count": len(window_scores),
+            }
+
+    return time_series
+
+
+async def get_prediction_history(
+    db_path: str | Path | None = None,
+    page: int = 1,
+    per_page: int = 20,
+    competition: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    source: str | None = None,
+    country: str | None = None,
+    team_id: int | None = None,
+    search: str | None = None,
+) -> dict:
+    """Get paginated list of scored predictions with match details.
+
+    Args:
+        db_path: Path to SQLite database. Defaults to data/elo.db.
+        page: Page number (1-indexed).
+        per_page: Number of items per page (max 100).
+        competition: Optional competition name filter.
+        date_from: Optional start date filter (YYYY-MM-DD).
+        date_to: Optional end date filter (YYYY-MM-DD).
+        source: Optional source filter ('live', 'backfill', or None for all).
+        country: Optional country name to filter by.
+        team_id: Optional team ID to filter by.
+        search: Optional team name search string. Whitespace-separated tokens;
+            all tokens must match at least one team name (AND logic).
+
+    Returns:
+        Dict with items, total, page, per_page, and pages.
+    """
+    path = str(db_path) if db_path else str(get_db_path())
+    conn = await aiosqlite.connect(path)
+    conn.row_factory = aiosqlite.Row
+
+    try:
+        # Build WHERE clauses and params
+        where_clauses = ["p.brier_score IS NOT NULL"]
+        params: list = []
+
+        if competition:
+            where_clauses.append("COALESCE(c1.name, c2.name) = ?")
+            params.append(competition)
+        elif country:
+            where_clauses.append("COALESCE(c1.country, c2.country) = ?")
+            params.append(country)
+
+        if team_id is not None:
+            where_clauses.append(
+                """(COALESCE(m.home_team_id, f.home_team_id) = ?
+                   OR COALESCE(m.away_team_id, f.away_team_id) = ?)"""
+            )
+            params.extend([team_id, team_id])
+
+        if date_from:
+            where_clauses.append("COALESCE(m.date, f.date) >= ?")
+            params.append(date_from)
+
+        if date_to:
+            where_clauses.append("COALESCE(m.date, f.date) <= ?")
+            params.append(date_to)
+
+        if source:
+            where_clauses.append("p.source = ?")
+            params.append(source)
+
+        if search:
+            tokens = search.strip().split()
+            for token in tokens:
+                where_clauses.append(
+                    "(LOWER(COALESCE(th1.name, th2.name)) LIKE ?"
+                    " OR LOWER(COALESCE(ta1.name, ta2.name)) LIKE ?)"
+                )
+                like_val = f"%{token.lower()}%"
+                params.extend([like_val, like_val])
+
+        where_sql = " AND ".join(where_clauses)
+
+        base_from = """
+            FROM predictions p
+            LEFT JOIN matches m ON m.id = p.match_id
+            LEFT JOIN competitions c1 ON c1.id = m.competition_id
+            LEFT JOIN teams th1 ON th1.id = m.home_team_id
+            LEFT JOIN teams ta1 ON ta1.id = m.away_team_id
+            LEFT JOIN fixtures f ON f.id = p.fixture_id
+            LEFT JOIN competitions c2 ON c2.id = f.competition_id
+            LEFT JOIN teams th2 ON th2.id = f.home_team_id
+            LEFT JOIN teams ta2 ON ta2.id = f.away_team_id
+            LEFT JOIN matches m2 ON m2.date = f.date
+                AND m2.home_team_id = f.home_team_id
+                AND m2.away_team_id = f.away_team_id
+        """
+
+        # Count total
+        count_sql = f"SELECT COUNT(*) as cnt {base_from} WHERE {where_sql}"
+        cursor = await conn.execute(count_sql, params)
+        count_row = await cursor.fetchone()
+        total = count_row["cnt"] if count_row else 0
+
+        # Calculate pagination
+        per_page = min(per_page, 100)
+        pages = max(1, (total + per_page - 1) // per_page)
+        offset = (page - 1) * per_page
+
+        # Fetch items
+        items_sql = f"""
+            SELECT
+                COALESCE(m.date, f.date) as match_date,
+                COALESCE(th1.name, th2.name) as home_team,
+                COALESCE(ta1.name, ta2.name) as away_team,
+                COALESCE(c1.name, c2.name) as competition,
+                p.p_home, p.p_draw, p.p_away,
+                COALESCE(m.result, m2.result) as actual_result,
+                COALESCE(m.home_goals, m2.home_goals) as home_goals,
+                COALESCE(m.away_goals, m2.away_goals) as away_goals,
+                p.brier_score,
+                p.home_elo,
+                p.away_elo,
+                p.source
+            {base_from}
+            WHERE {where_sql}
+            ORDER BY COALESCE(m.date, f.date) DESC, p.id DESC
+            LIMIT ? OFFSET ?
+        """
+        cursor = await conn.execute(items_sql, params + [per_page, offset])
+        rows = await cursor.fetchall()
+
+        items = [
+            {
+                "date": row["match_date"],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+                "competition": row["competition"] or "Unknown",
+                "p_home": round(row["p_home"], 4),
+                "p_draw": round(row["p_draw"], 4),
+                "p_away": round(row["p_away"], 4),
+                "actual_result": row["actual_result"],
+                "home_goals": row["home_goals"],
+                "away_goals": row["away_goals"],
+                "brier_score": round(row["brier_score"], 4),
+                "home_elo": round(row["home_elo"], 1),
+                "away_elo": round(row["away_elo"], 1),
+                "source": row["source"] or "live",
+            }
+            for row in rows
+        ]
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": pages,
         }
     finally:
         await conn.close()

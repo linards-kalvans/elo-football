@@ -24,6 +24,11 @@ class RankingEntry(BaseModel):
     team_id: int = Field(..., description="Team ID for detail page links", json_schema_extra={"examples": [42]})
     country: str = Field(..., description="Team country", json_schema_extra={"examples": ["Germany"]})
     rating: float = Field(..., description="Elo rating", json_schema_extra={"examples": [1836.2]})
+    change_7d: float | None = Field(
+        None,
+        description="Elo rating change over last 7 calendar days",
+        json_schema_extra={"examples": [12.5]},
+    )
 
 
 class RankingsResponse(BaseModel):
@@ -271,6 +276,16 @@ class CompetitionAccuracy(BaseModel):
     )
 
 
+class BrierTimeSeriesPoint(BaseModel):
+    """Single point in the Brier score rolling average time series."""
+
+    date: str = Field(..., description="Date (YYYY-MM-DD)", json_schema_extra={"examples": ["2026-03-01"]})
+    rolling_brier: float = Field(
+        ..., description="Rolling average Brier score (window=50)", json_schema_extra={"examples": [0.42]}
+    )
+    count: int = Field(..., description="Number of predictions in the rolling window", json_schema_extra={"examples": [50]})
+
+
 class PredictionAccuracyResponse(BaseModel):
     """Response for /api/prediction-accuracy endpoint."""
 
@@ -290,6 +305,297 @@ class PredictionAccuracyResponse(BaseModel):
     by_competition: dict[str, CompetitionAccuracy] = Field(
         default_factory=dict, description="Brier score breakdown by competition"
     )
+    by_source: dict[str, CompetitionAccuracy] = Field(
+        default_factory=dict,
+        description="Brier score breakdown by prediction source (live vs backfill)",
+    )
     recent_form: float | None = Field(
         None, description="Mean Brier score over the last 100 predictions", json_schema_extra={"examples": [0.4200]}
+    )
+    time_series: list[BrierTimeSeriesPoint] = Field(
+        default_factory=list, description="Rolling Brier score time series for trend chart"
+    )
+
+
+class PredictionHistoryItem(BaseModel):
+    """Single scored prediction in the prediction history."""
+
+    date: str = Field(..., description="Match date (YYYY-MM-DD)", json_schema_extra={"examples": ["2026-03-15"]})
+    home_team: str = Field(..., description="Home team name", json_schema_extra={"examples": ["Arsenal"]})
+    away_team: str = Field(..., description="Away team name", json_schema_extra={"examples": ["Chelsea"]})
+    competition: str = Field(..., description="Competition name", json_schema_extra={"examples": ["Premier League"]})
+    p_home: float = Field(..., description="Predicted home win probability", json_schema_extra={"examples": [0.52]})
+    p_draw: float = Field(..., description="Predicted draw probability", json_schema_extra={"examples": [0.25]})
+    p_away: float = Field(..., description="Predicted away win probability", json_schema_extra={"examples": [0.23]})
+    actual_result: str = Field(..., description="Actual match result (H/D/A)", json_schema_extra={"examples": ["H"]})
+    home_goals: int = Field(..., description="Home team goals scored", json_schema_extra={"examples": [2]})
+    away_goals: int = Field(..., description="Away team goals scored", json_schema_extra={"examples": [1]})
+    brier_score: float = Field(..., description="Brier score for this prediction", json_schema_extra={"examples": [0.35]})
+    home_elo: float = Field(..., description="Home team Elo at prediction time", json_schema_extra={"examples": [1836]})
+    away_elo: float = Field(..., description="Away team Elo at prediction time", json_schema_extra={"examples": [1650]})
+    source: str = Field("live", description="Prediction source ('live' or 'backfill')", json_schema_extra={"examples": ["live"]})
+
+
+class PredictionHistoryResponse(BaseModel):
+    """Paginated response for /api/prediction-history endpoint."""
+
+    items: list[PredictionHistoryItem] = Field(..., description="List of scored predictions")
+    total: int = Field(..., description="Total number of matching predictions", json_schema_extra={"examples": [150]})
+    page: int = Field(..., description="Current page number", json_schema_extra={"examples": [1]})
+    per_page: int = Field(..., description="Items per page", json_schema_extra={"examples": [20]})
+    pages: int = Field(..., description="Total number of pages", json_schema_extra={"examples": [8]})
+
+
+# --- Sprint 12: EloKit Scoped API Models ---
+
+
+class RankingsContextResponse(BaseModel):
+    """Response for /api/rankings/context endpoint.
+
+    Returns a team and its surrounding teams in its domestic league ranking.
+    """
+
+    team_id: int = Field(
+        ..., description="Queried team ID", json_schema_extra={"examples": [42]}
+    )
+    league: str = Field(
+        ..., description="Domestic league name",
+        json_schema_extra={"examples": ["Premier League"]},
+    )
+    count: int = Field(
+        ..., description="Number of teams returned",
+        json_schema_extra={"examples": [7]},
+    )
+    rankings: list[RankingEntry] = Field(
+        ..., description="Surrounding teams in league ranking"
+    )
+
+
+class ScopedFixtureEntry(BaseModel):
+    """Single fixture/match entry for scoped fixtures endpoint."""
+
+    date: str = Field(
+        ..., description="Match date (YYYY-MM-DD)",
+        json_schema_extra={"examples": ["2026-03-20"]},
+    )
+    home_team: FixtureTeam = Field(..., description="Home team")
+    away_team: FixtureTeam = Field(..., description="Away team")
+    competition: str = Field(
+        ..., description="Competition name",
+        json_schema_extra={"examples": ["Premier League"]},
+    )
+    status: str = Field(
+        ..., description="Match status (finished/scheduled)",
+        json_schema_extra={"examples": ["finished"]},
+    )
+    home_goals: int | None = Field(
+        None, description="Home team goals (null if upcoming)",
+        json_schema_extra={"examples": [2]},
+    )
+    away_goals: int | None = Field(
+        None, description="Away team goals (null if upcoming)",
+        json_schema_extra={"examples": [1]},
+    )
+    prediction: FixturePrediction | None = Field(
+        None, description="Elo-based prediction if available"
+    )
+    competition_logo_url: str | None = Field(
+        None, description="URL for competition logo SVG",
+        json_schema_extra={"examples": ["/static/logos/competitions/premier-league.svg"]},
+    )
+    home_elo_change: float | None = Field(
+        None, description="Home team Elo rating change from this match",
+        json_schema_extra={"examples": [12.3]},
+    )
+    away_elo_change: float | None = Field(
+        None, description="Away team Elo rating change from this match",
+        json_schema_extra={"examples": [-8.5]},
+    )
+    home_elo_before: float | None = Field(
+        None, description="Home team Elo rating before the match",
+        json_schema_extra={"examples": [1550.0]},
+    )
+    away_elo_before: float | None = Field(
+        None, description="Away team Elo rating before the match",
+        json_schema_extra={"examples": [1480.0]},
+    )
+
+
+class ScopedFixturesResponse(BaseModel):
+    """Response for /api/fixtures/scoped endpoint."""
+
+    finished: list[ScopedFixtureEntry] = Field(
+        ..., description="Recent finished matches"
+    )
+    upcoming: list[ScopedFixtureEntry] = Field(
+        ..., description="Upcoming scheduled fixtures"
+    )
+    total_finished: int = Field(
+        ..., description="Count of finished matches returned",
+        json_schema_extra={"examples": [3]},
+    )
+    total_upcoming: int = Field(
+        ..., description="Count of upcoming fixtures returned",
+        json_schema_extra={"examples": [3]},
+    )
+    has_more_finished: bool = Field(
+        False, description="Whether more older finished matches exist"
+    )
+    has_more_upcoming: bool = Field(
+        False, description="Whether more upcoming fixtures exist"
+    )
+
+
+class TeamRatingHistory(BaseModel):
+    """Rating history for a single team (used in scoped chart)."""
+
+    team_id: int = Field(
+        ..., description="Team ID", json_schema_extra={"examples": [42]}
+    )
+    team: str = Field(
+        ..., description="Team name", json_schema_extra={"examples": ["Arsenal"]}
+    )
+    history: list[RatingHistoryPoint] = Field(
+        ..., description="Rating history points"
+    )
+
+
+class ScopedChartResponse(BaseModel):
+    """Response for /api/chart/scoped endpoint."""
+
+    teams: list[TeamRatingHistory] = Field(
+        ..., description="Rating histories for teams in scope"
+    )
+    count: int = Field(
+        ..., description="Number of teams returned",
+        json_schema_extra={"examples": [5]},
+    )
+
+
+class ScopedAccuracyResponse(BaseModel):
+    """Response for /api/accuracy/scoped endpoint."""
+
+    total_predictions: int = Field(
+        ..., description="Number of scored predictions in scope",
+        json_schema_extra={"examples": [120]},
+    )
+    accuracy_pct: float | None = Field(
+        None,
+        description="Percentage of correct outcome predictions (0-100)",
+        json_schema_extra={"examples": [52.3]},
+    )
+    mean_brier_score: float | None = Field(
+        None,
+        description="Mean Brier score (lower is better)",
+        json_schema_extra={"examples": [0.4321]},
+    )
+    trend_pct: float | None = Field(
+        None,
+        description="Accuracy change vs previous period (percentage points)",
+        json_schema_extra={"examples": [1.5]},
+    )
+
+
+class OutcomeGridCell(BaseModel):
+    """Single cell in the 3x3 prediction performance grid."""
+
+    count: int = Field(
+        ..., description="Number of matches in this cell",
+        json_schema_extra={"examples": [5200]},
+    )
+    pct_of_row: float = Field(
+        ..., description="Percentage of the actual outcome row (0-100)",
+        json_schema_extra={"examples": [65.0]},
+    )
+    pct_of_total: float = Field(
+        ..., description="Percentage of all predictions (0-100)",
+        json_schema_extra={"examples": [25.7]},
+    )
+
+
+class OutcomeGridRow(BaseModel):
+    """Row in the prediction performance grid for one actual outcome."""
+
+    predicted_home: OutcomeGridCell = Field(
+        ..., description="Cell where predicted outcome is Home"
+    )
+    predicted_draw: OutcomeGridCell = Field(
+        ..., description="Cell where predicted outcome is Draw"
+    )
+    predicted_away: OutcomeGridCell = Field(
+        ..., description="Cell where predicted outcome is Away"
+    )
+    total: int = Field(
+        ..., description="Row total (all matches with this actual outcome)",
+        json_schema_extra={"examples": [8000]},
+    )
+
+
+class PredictionGridResponse(BaseModel):
+    """Response for /api/accuracy/grid — 3x3 predicted vs actual outcome grid."""
+
+    actual_home: OutcomeGridRow = Field(
+        ..., description="Row for actual Home wins"
+    )
+    actual_draw: OutcomeGridRow = Field(
+        ..., description="Row for actual Draws"
+    )
+    actual_away: OutcomeGridRow = Field(
+        ..., description="Row for actual Away wins"
+    )
+    total: int = Field(
+        ..., description="Grand total of all scored predictions",
+        json_schema_extra={"examples": [20263]},
+    )
+    correct: int = Field(
+        ..., description="Number of correct predictions (diagonal sum)",
+        json_schema_extra={"examples": [11563]},
+    )
+    accuracy_pct: float = Field(
+        ..., description="Overall accuracy percentage (0-100)",
+        json_schema_extra={"examples": [57.1]},
+    )
+
+
+class SidebarCompetition(BaseModel):
+    """Single competition entry in sidebar navigation."""
+
+    id: int = Field(..., description="Competition ID", json_schema_extra={"examples": [1]})
+    name: str = Field(
+        ..., description="Competition name",
+        json_schema_extra={"examples": ["Premier League"]},
+    )
+    type: str = Field(
+        ..., description="Competition type (league or cup)",
+        json_schema_extra={"examples": ["league"]},
+    )
+    logo_url: str | None = Field(
+        None, description="URL for competition logo SVG",
+        json_schema_extra={"examples": ["/static/logos/competitions/premier-league.svg"]},
+    )
+
+
+class SidebarNation(BaseModel):
+    """Nation entry with its competitions for sidebar navigation."""
+
+    country: str = Field(
+        ..., description="Country name", json_schema_extra={"examples": ["England"]}
+    )
+    flag_url: str | None = Field(
+        None, description="URL for country flag SVG",
+        json_schema_extra={"examples": ["/static/flags/england.svg"]},
+    )
+    competitions: list[SidebarCompetition] = Field(
+        ..., description="Competitions in this country"
+    )
+
+
+class SidebarResponse(BaseModel):
+    """Response for /api/sidebar endpoint."""
+
+    nations: list[SidebarNation] = Field(
+        ..., description="Nations with their domestic competitions"
+    )
+    european: list[SidebarCompetition] = Field(
+        ..., description="European club competitions (CL, EL, Conference)"
     )

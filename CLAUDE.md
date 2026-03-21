@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Elo rating system for European football clubs. The ultimate goal is a **web application** providing current and historical Elo ratings, plus match win-probability predictions.
 
-The project has completed **Sprints 1-10** — a unified Elo engine rates 325 teams across 5 domestic leagues + CL/EL/Conference League (31,789 matches, with 2010-2016 warm-up period for calibration), with a fully documented FastAPI backend, interactive frontend (rankings, team profiles with stats, comparison charts, match predictions, fixtures), Docker/CI deployment infrastructure, live data integration via football-data.org API, and automated prediction tracking with Brier score validation.
+The project has completed **Sprints 1-15.1** — a unified Elo engine rates 325 teams across 5 domestic leagues + CL/EL/Conference League (31,789 matches, with 2010-2016 warm-up period for calibration), with a fully documented FastAPI backend (17 endpoints, comprehensive API contract), unified "EloKit" frontend (single-page layout with context-aware routing, sidebar navigation, fixtures with Elo change deltas, Elo charts with team management, rankings with top-5 + context display, nation flag SVGs, competition logo badges), Docker/CI deployment infrastructure, live data integration via football-data.org API, automated prediction tracking with Brier score validation, 20,263 backfilled historical predictions with live/backfill source labeling, detailed prediction accuracy view with 3×3 Performance Grid, searchable Match Prediction Log, calibration chart, and Brier score trend visualization.
 
 ## Understanding the Code — CRITICAL
 
@@ -24,7 +24,7 @@ The project has completed **Sprints 1-10** — a unified Elo engine rates 325 te
 ```bash
 uv sync                          # Install dependencies
 uv run python <script>           # Run any script
-uv run pytest tests/ -v          # Run tests (363 passing)
+uv run pytest tests/ -v          # Run tests (388 passing)
 uv run uvicorn backend.main:app --reload  # Start FastAPI backend (port 8000)
 cd data && bash fetch_league_csvs.sh  # Fetch raw match data (2010-2026)
 uv run python scripts/run_daily_update.py  # Fetch live matches & fixtures
@@ -46,7 +46,7 @@ uv run python src/db/migrate.py  # Apply database migrations
 - **`backend/`** — FastAPI web application (production-ready)
   - `main.py` — FastAPI app with 10+ REST endpoints, OpenAPI docs
   - `models.py` — Pydantic response models
-  - `templates/` — Jinja2 templates (rankings.html, team.html, compare.html, predict.html, fixtures.html, base.html)
+  - `templates/` — Jinja2 templates (`base.html` layout + `index.html` unified page — replaces old multi-page templates)
   - `static/` — Frontend assets (Tailwind CDN, Alpine.js 3.13, ApexCharts 3.45, noUiSlider 15.7)
 - **Deployment** — Docker + CI/CD
   - `Dockerfile` — Multi-stage build with uv
@@ -57,8 +57,9 @@ uv run python src/db/migrate.py  # Apply database migrations
   - `europe/` — CL/EL/Conference League .txt files (openfootball)
   - `elo.db` — SQLite database (325 teams, 31,789 matches, 63K+ rating history records)
 - **`scripts/`** — Operational scripts (daily update, DB backup, team mapping builder)
-- **`tests/`** — Unit tests (pytest, 363 tests passing)
+- **`tests/`** — Unit tests (pytest, 388 tests passing)
 - **`docs/`** — Sprint plans, ADRs, milestones, API documentation
+  - **`docs/api-contract.md`** — API contract documentation. **MUST be kept up to date** when endpoints are added, modified, or removed. Update response models, query parameters, and changelog.
 - **`notebooks/`** — Analysis scripts, parameter sweeps, experiment outputs
 
 ## Architecture
@@ -105,6 +106,50 @@ Sprint plans with detailed scope and status are in `docs/sprint-{N}-plan.md`. Hi
   - ✅ Fixtures page with Elo prediction bars, `/api/prediction-accuracy` endpoint
   - ✅ Tier weight optimization: Optuna confirmed hand-picked defaults are optimal
   - ✅ 363 tests passing (was 237)
+- Sprint 11: COMPLETED (Dockerized daily update cron, prediction history + accuracy frontend)
+- Sprint 12: COMPLETED (EloKit UI redesign — unified single-page layout, sidebar navigation, context-aware routing)
+  - ✅ Single `index.html` replaces 8 templates; URL scheme `/{nation}/{league}/{team}`
+  - ✅ Context-aware API endpoints: `/api/fixtures/scoped`, `/api/chart/scoped`, `/api/accuracy/scoped`, `/api/sidebar`
+  - ✅ Sidebar with nations/leagues/cups, breadcrumb navigation, EloKit branding
+  - ✅ Old templates retired, old routes redirect
+- Sprint 12.1: COMPLETED (EloKit polish — data loading regression fix, fixtures pagination, chart controls, rankings display)
+- Sprint 13: COMPLETED (Nation flags & competition logos — SVG flags, competition badge logos, API URL fields, frontend integration)
+  - ✅ Fixed nested `<button>` and `x-data` scope issues causing data loading regression
+  - ✅ Fixtures: 3+3 default with "Load more..." offset-based pagination
+  - ✅ Chart: team add/remove via `chart.updateOptions()`, zoom controls
+  - ✅ Rankings: top 5 + team ±3 context with "View all" toggle
+  - ✅ 360 tests passing
+- Sprint 13: COMPLETED (Nation flags & competition logos)
+  - ✅ 6 country flag SVGs from flag-icons (MIT), 8 competition badge SVGs
+  - ✅ API: `flag_url` on SidebarNation, `logo_url` on SidebarCompetition, `competition_logo_url` on ScopedFixtureEntry
+  - ✅ Sidebar: real flag images replace emoji, competition logos replace generic icons
+  - ✅ Breadcrumbs: flag image next to country name
+  - ✅ Fixtures: competition logo from API with `competitionIcon()` fallback
+  - ✅ `flagEmoji()` function removed
+  - ✅ 364 tests passing
+- Sprint 14: COMPLETED (Prediction pipeline fix & historical backfill)
+  - ✅ Fixed prediction scoring: `score_completed_matches()` now called in daily update, fixture status transitions to `completed`
+  - ✅ HTTP 403 retry: 3 attempts with 10s/60s/120s delays (401 still immediate failure)
+  - ✅ Historical backfill: 20,263 predictions with pre-match Elo ratings, mean Brier score 0.586
+  - ✅ Schema migration 005: `source` column on predictions table (`live` vs `backfill`)
+  - ✅ Frontend: by-source breakdown in accuracy dashboard, source labels in prediction history
+  - ✅ Fixed accuracy detail view `by_competition` dict→array transformation
+  - ✅ 364 tests passing
+- Sprint 15: COMPLETED (Detailed prediction accuracy view)
+  - ✅ Prediction Performance Grid: 3×3 confusion matrix (predicted vs actual outcome) with heatmap styling
+  - ✅ Match Prediction Log: paginated, searchable table with multi-word team search, probability bars, Brier coloring
+  - ✅ New endpoint: `GET /api/accuracy/grid` with country/competition/team_id/source scoping
+  - ✅ Extended `/api/prediction-accuracy` and `/api/prediction-history` with country + team_id filters
+  - ✅ "View details" navigation from compact accuracy widget to full detail panel
+  - ✅ Context-aware: all detail views respect current navigation scope (global/nation/league/team)
+  - ✅ 388 tests passing (was 364)
+- Sprint 15.1: COMPLETED (Accuracy charts, Elo deltas & polish)
+  - ✅ Calibration chart: 10-bucket bar chart with perfect-calibration reference line (ApexCharts)
+  - ✅ Brier score trend chart: rolling area chart with mean reference and zoom
+  - ✅ Elo change on completed fixtures: color-coded +N/-N deltas from ratings_history
+  - ✅ Logo & breadcrumb polish: increased sizes, competition logos in breadcrumbs
+  - ✅ API contract doc updated: 17 endpoints documented (was 7)
+  - ✅ 388 tests passing (no regressions)
 
 ## Roles
 

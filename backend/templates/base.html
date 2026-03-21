@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Football Elo Ratings{% endblock %}</title>
+    <title>{% block title %}EloKit — Club Rating Analytics{% endblock %}</title>
+
+    <!-- Favicon -->
+    <link rel="icon" href="/static/favicon.png">
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
@@ -17,106 +17,356 @@
     {% block extra_head %}{% endblock %}
 
     <style>
-        /* Custom styles */
         [x-cloak] { display: none !important; }
     </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            200: '#c7d2fe',
+                            300: '#a5b4fc',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            800: '#3730a3',
+                            900: '#312e81',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body class="h-full bg-gray-50">
-    <div class="min-h-full">
-        <!-- Navigation -->
-        <nav class="bg-white shadow-sm border-b border-gray-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between h-16">
-                    <div class="flex">
-                        <div class="flex-shrink-0 flex items-center">
-                            <a href="/" class="text-xl font-bold text-gray-900">
-                                ⚽ Football Elo
-                            </a>
-                        </div>
-                        <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                            <a href="/"
-                               class="{% if request.url.path == '/' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                                Rankings
-                            </a>
-                            <a href="/compare"
-                               class="{% if request.url.path == '/compare' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                                Compare
-                            </a>
-                            <a href="/predict"
-                               class="{% if request.url.path == '/predict' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                                Predict
-                            </a>
-                            <a href="/fixtures"
-                               class="{% if request.url.path == '/fixtures' %}border-indigo-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                                Fixtures
-                            </a>
-                        </div>
-                    </div>
+<body class="h-full bg-gray-50 overflow-x-hidden" x-data="elokit()" x-init="init()">
+    <div class="min-h-full flex flex-col">
 
-                    <!-- Search bar -->
-                    <div class="flex items-center">
-                        <div class="w-full max-w-xs" x-data="{ open: false, query: '', results: [] }">
-                            <div class="relative">
-                                <input
-                                    type="text"
-                                    x-model="query"
-                                    @input.debounce.300ms="
-                                        if (query.length > 0) {
-                                            fetch(`/api/search?q=${query}&limit=5`)
-                                                .then(r => r.json())
-                                                .then(data => { results = data.results; open = true; })
-                                        } else {
-                                            results = [];
-                                            open = false;
-                                        }
-                                    "
-                                    @click.away="open = false"
-                                    placeholder="Search teams..."
-                                    class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                                />
-                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                                    </svg>
-                                </div>
+        <!-- Header -->
+        <header class="bg-white border-b border-gray-200 shadow-sm relative z-30">
+            <div class="flex items-center justify-between px-4 py-3 lg:px-6">
+                <!-- Left: hamburger + logo -->
+                <div class="flex items-center gap-3">
+                    <!-- Hamburger (mobile/tablet) -->
+                    <button
+                        @click="sidebarOpen = !sidebarOpen"
+                        class="lg:hidden p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus:outline-none"
+                        aria-label="Toggle sidebar"
+                    >
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path x-show="!sidebarOpen" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            <path x-show="sidebarOpen" x-cloak stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
 
-                                <!-- Search results dropdown -->
-                                <div x-show="open && results.length > 0"
-                                     x-cloak
-                                     class="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md border border-gray-200">
-                                    <ul class="max-h-60 rounded-md py-1 text-base overflow-auto focus:outline-none sm:text-sm">
-                                        <template x-for="result in results" :key="result.id">
-                                            <li>
-                                                <a :href="`/team/${result.id}`"
-                                                   class="block px-4 py-2 hover:bg-gray-100">
+                    <!-- Logo -->
+                    <a href="/" class="flex items-center gap-2 shrink-0">
+                        <img src="/static/logos/elokit-logo.png" alt="EloKit" class="h-9 w-auto">
+                        <span class="text-xl font-bold text-gray-900 hidden sm:inline">EloKit</span>
+                    </a>
+                </div>
+
+                <!-- Center: banner text -->
+                <div class="hidden md:flex items-center text-sm text-brand-600 font-medium">
+                    Club Rating Analytics
+                </div>
+
+                <!-- Right: search -->
+                <div class="flex items-center" x-data="{ open: false, query: '', results: [], searchExpanded: false }">
+                    <div class="w-full max-w-xs">
+                        <div class="relative">
+                            <!-- Icon-only button on very small screens -->
+                            <button
+                                @click="searchExpanded = true; $nextTick(() => $refs.searchInput.focus())"
+                                x-show="!searchExpanded"
+                                class="sm:hidden p-2 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                                aria-label="Search"
+                            >
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                            </button>
+                            <input
+                                x-ref="searchInput"
+                                type="text"
+                                x-model="query"
+                                @input.debounce.300ms="
+                                    if (query.length > 0) {
+                                        fetch(`/api/search?q=${encodeURIComponent(query)}&limit=5`)
+                                            .then(r => r.json())
+                                            .then(data => { results = data.results; open = true; })
+                                    } else {
+                                        results = [];
+                                        open = false;
+                                    }
+                                "
+                                @click.away="open = false; if (!query) searchExpanded = false"
+                                @keydown.escape="open = false; if (!query) searchExpanded = false"
+                                placeholder="Find team..."
+                                :class="searchExpanded ? 'block' : 'hidden sm:block'"
+                                class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                            />
+                            <div :class="searchExpanded ? 'flex' : 'hidden sm:flex'" class="absolute inset-y-0 left-0 pl-2.5 items-center pointer-events-none">
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                            </div>
+
+                            <!-- Search results dropdown -->
+                            <div x-show="open && results.length > 0"
+                                 x-cloak
+                                 x-transition:enter="transition ease-out duration-100"
+                                 x-transition:enter-start="opacity-0 scale-95"
+                                 x-transition:enter-end="opacity-100 scale-100"
+                                 x-transition:leave="transition ease-in duration-75"
+                                 x-transition:leave-start="opacity-100 scale-100"
+                                 x-transition:leave-end="opacity-0 scale-95"
+                                 class="absolute z-50 mt-1 w-full bg-white shadow-lg rounded-lg border border-gray-200 overflow-hidden">
+                                <ul class="max-h-60 py-1 text-sm overflow-auto">
+                                    <template x-for="result in results" :key="result.id">
+                                        <li>
+                                            <a :href="`/team/${result.id}`"
+                                               class="flex items-center gap-3 px-3 py-2 hover:bg-brand-50 transition-colors">
+                                                <img src="/static/icons/club.svg" class="w-5 h-5 opacity-50" alt="">
+                                                <div>
                                                     <div class="font-medium text-gray-900" x-text="result.name"></div>
-                                                    <div class="text-sm text-gray-500" x-text="result.country"></div>
-                                                </a>
-                                            </li>
-                                        </template>
-                                    </ul>
-                                </div>
+                                                    <div class="text-xs text-gray-500" x-text="result.country"></div>
+                                                </div>
+                                            </a>
+                                        </li>
+                                    </template>
+                                </ul>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </header>
+
+        <!-- Breadcrumb -->
+        {% set level = level | default('global') %}
+        {% set country = country | default(none) %}
+        {% set competition = competition | default(none) %}
+        {% set team_name = team_name | default(none) %}
+        <nav class="bg-white border-b border-gray-100 px-4 lg:px-6" aria-label="Breadcrumb">
+            <ol class="flex items-center gap-1.5 py-2.5 text-sm text-gray-500 overflow-x-auto whitespace-nowrap">
+                <li class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1"/>
+                    </svg>
+                    {% if level == 'global' %}
+                        <span class="font-medium text-gray-900">EloKit</span>
+                    {% else %}
+                        <a href="/" class="hover:text-brand-600 transition-colors">EloKit</a>
+                    {% endif %}
+                </li>
+                {% if country %}
+                <li class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-gray-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+                    {% if level == 'nation' %}
+                        <img src="/static/flags/{{ country | lower }}.svg" class="w-5 h-4 rounded-sm object-cover inline" alt="" onerror="this.style.display='none'">
+                        <span class="font-medium text-gray-900">{{ country }}</span>
+                    {% else %}
+                        <img src="/static/flags/{{ country | lower }}.svg" class="w-5 h-4 rounded-sm object-cover inline" alt="" onerror="this.style.display='none'">
+                        <a href="/{{ country | to_slug }}" class="hover:text-brand-600 transition-colors">{{ country }}</a>
+                    {% endif %}
+                </li>
+                {% endif %}
+                {% if competition %}
+                <li class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-gray-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+                    {% if competition_logo_url %}
+                        <img src="{{ competition_logo_url }}" class="w-5 h-5 shrink-0 inline" alt="" onerror="this.style.display='none'">
+                    {% endif %}
+                    {% if level == 'league' %}
+                        <span class="font-medium text-gray-900">{{ competition }}</span>
+                    {% else %}
+                        <a href="/{{ country | to_slug }}/{{ competition | to_slug }}" class="hover:text-brand-600 transition-colors">{{ competition }}</a>
+                    {% endif %}
+                </li>
+                {% endif %}
+                {% if team_name %}
+                <li class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-gray-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+                    <span class="font-medium text-gray-900">{{ team_name }}</span>
+                </li>
+                {% endif %}
+            </ol>
         </nav>
 
-        <!-- Main content -->
-        <main>
-            {% block content %}{% endblock %}
-        </main>
+        <!-- Layout: sidebar + main -->
+        <div class="flex flex-1 overflow-hidden">
+
+            <!-- Sidebar overlay (mobile) -->
+            <div
+                x-show="sidebarOpen"
+                x-cloak
+                @click="sidebarOpen = false"
+                class="fixed inset-0 bg-black/30 z-20 lg:hidden"
+                x-transition:enter="transition-opacity ease-out duration-200"
+                x-transition:enter-start="opacity-0"
+                x-transition:enter-end="opacity-100"
+                x-transition:leave="transition-opacity ease-in duration-150"
+                x-transition:leave-start="opacity-100"
+                x-transition:leave-end="opacity-0"
+            ></div>
+
+            <!-- Sidebar -->
+            <aside
+                :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+                class="fixed lg:static top-0 bottom-0 left-0 z-20 w-64 bg-white border-r border-gray-200 overflow-y-auto transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:flex-shrink-0 pt-[113px] lg:pt-0"
+            >
+                <nav class="p-4 space-y-6 text-sm">
+
+                    <!-- Nation Leagues -->
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Nation Leagues</h3>
+                        <ul class="space-y-1">
+                            <template x-for="nation in sidebar.nations" :key="nation.country">
+                                <li x-data="{ expanded: false }">
+                                    <button
+                                        @click="expanded = !expanded"
+                                        class="w-full flex items-center justify-between px-2 py-2 rounded-md hover:bg-gray-50 transition-colors text-gray-700 font-medium"
+                                    >
+                                        <a :href="'/' + toSlug(nation.country)"
+                                           @click.stop
+                                           class="flex items-center gap-2 hover:text-brand-600">
+                                            <img :src="nation.flag_url" class="w-6 h-4 rounded-sm object-cover" alt="" x-show="nation.flag_url" @error="this.style.display='none'">
+                                            <span x-text="nation.country"></span>
+                                        </a>
+                                        <svg
+                                            :class="expanded ? 'rotate-90' : ''"
+                                            class="w-4 h-4 text-gray-400 transition-transform duration-150"
+                                            fill="currentColor" viewBox="0 0 20 20"
+                                        >
+                                            <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+                                        </svg>
+                                    </button>
+                                    <ul x-show="expanded" x-cloak
+                                        x-transition:enter="transition ease-out duration-150"
+                                        x-transition:enter-start="opacity-0 -translate-y-1"
+                                        x-transition:enter-end="opacity-100 translate-y-0"
+                                        x-transition:leave="transition ease-in duration-100"
+                                        x-transition:leave-start="opacity-100 translate-y-0"
+                                        x-transition:leave-end="opacity-0 -translate-y-1"
+                                        class="ml-5 mt-1 space-y-0.5">
+                                        <template x-for="comp in nation.competitions" :key="comp.id">
+                                            <li>
+                                                <a
+                                                    :href="'/' + toSlug(nation.country) + '/' + toSlug(comp.name)"
+                                                    class="flex items-center gap-2 px-2 py-1.5 rounded-md text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                                                >
+                                                    <img
+                                                        :src="comp.logo_url || (comp.type === 'cup' ? '/static/icons/cup.svg' : '/static/icons/league.svg')"
+                                                        class="w-5 h-5 shrink-0"
+                                                        :class="comp.logo_url ? '' : 'opacity-40'"
+                                                        alt=""
+                                                    >
+                                                    <span x-text="comp.name"></span>
+                                                </a>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+
+                    <!-- European Club Competitions -->
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">European Competitions</h3>
+                        <ul class="space-y-0.5">
+                            <template x-for="comp in sidebar.european" :key="comp.id">
+                                <li>
+                                    <a
+                                        :href="'/europe/' + toSlug(comp.name)"
+                                        class="flex items-center gap-2 px-2 py-2 rounded-md text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                                    >
+                                        <img :src="comp.logo_url || '/static/icons/cup.svg'"
+                                             class="w-5 h-5 shrink-0"
+                                             :class="comp.logo_url ? '' : 'opacity-40'"
+                                             alt="">
+                                        <span x-text="comp.name"></span>
+                                    </a>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+
+                    <!-- About -->
+                    <div class="pt-4 border-t border-gray-100">
+                        <a href="/about" class="flex items-center gap-2 px-2 py-2 rounded-md text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span>About</span>
+                        </a>
+                    </div>
+                </nav>
+            </aside>
+
+            <!-- Main content -->
+            <main class="flex-1 overflow-y-auto">
+                <div class="max-w-6xl mx-auto px-3 py-4 sm:px-4 sm:py-6 lg:px-8">
+                    {% block content %}{% endblock %}
+                </div>
+            </main>
+        </div>
 
         <!-- Footer -->
-        <footer class="bg-white border-t border-gray-200 mt-12">
-            <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-                <p class="text-center text-sm text-gray-500">
-                    Data sources: <a href="https://www.football-data.co.uk" class="text-indigo-600 hover:text-indigo-500">Football-Data.co.uk</a>
-                    & <a href="https://github.com/openfootball" class="text-indigo-600 hover:text-indigo-500">openfootball</a>
+        <footer class="bg-white border-t border-gray-200">
+            <div class="max-w-6xl mx-auto py-5 px-4 lg:px-8">
+                <p class="text-center text-xs text-gray-400">
+                    Data sources:
+                    <a href="https://www.football-data.co.uk" class="text-brand-500 hover:text-brand-600">Football-Data.co.uk</a>
+                    &amp;
+                    <a href="https://github.com/openfootball" class="text-brand-500 hover:text-brand-600">openfootball</a>
                 </p>
             </div>
         </footer>
     </div>
+
+    <script>
+        /**
+         * Convert a name to a URL-safe slug.
+         * Mirrors the Python to_slug() function in backend/slugs.py.
+         */
+        function toSlug(name) {
+            return name
+                .normalize('NFKD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+        }
+
+        /**
+         * Main EloKit Alpine.js component.
+         * Manages sidebar state and data fetching.
+         */
+        function elokit() {
+            return {
+                sidebarOpen: false,
+                sidebar: { nations: [], european: [] },
+
+                toSlug,
+
+                async init() {
+                    try {
+                        const res = await fetch('/api/sidebar');
+                        if (res.ok) {
+                            this.sidebar = await res.json();
+                        }
+                    } catch (e) {
+                        console.error('Failed to load sidebar:', e);
+                    }
+                },
+            };
+        }
+    </script>
 </body>
 </html>

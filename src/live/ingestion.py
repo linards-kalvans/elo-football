@@ -21,6 +21,7 @@ from src.db.repository import (
     insert_team,
 )
 from src.live.football_data_client import COMPETITION_MAP, FootballDataClient
+from src.live.prediction_tracker import score_completed_matches
 from src.live.team_mapping import resolve_team
 from src.pipeline import run_incremental_update
 from src.prediction import predict_match
@@ -249,6 +250,32 @@ async def fetch_and_ingest_matches(
         skip_validation=True,
     )
     summary["matches_ingested"] = result.get("new_matches", 0)
+
+    # Mark matching fixtures as completed
+    if summary["matches_ingested"] > 0:
+        try:
+            conn = get_connection(db_path)
+            try:
+                fixtures_completed = 0
+                for _, row in new_matches_df.iterrows():
+                    cursor = conn.execute(
+                        """UPDATE fixtures SET status = 'completed'
+                           WHERE date = ?
+                             AND home_team_id = (SELECT id FROM teams WHERE name = ?)
+                             AND away_team_id = (SELECT id FROM teams WHERE name = ?)
+                             AND status = 'scheduled'""",
+                        (row["Date"], row["HomeTeam"], row["AwayTeam"]),
+                    )
+                    fixtures_completed += cursor.rowcount
+                conn.commit()
+                if fixtures_completed:
+                    logger.info("Marked %d fixtures as completed", fixtures_completed)
+                summary["fixtures_completed"] = fixtures_completed
+            finally:
+                conn.close()
+        except Exception:
+            logger.debug("Could not update fixture statuses (table may not exist)")
+
     return summary
 
 
@@ -402,27 +429,33 @@ async def fetch_and_ingest_fixtures(
 
 
 async def run_daily_update(db_path: str | Path | None = None) -> dict:
-    """Run both match ingestion and fixture fetching.
+    """Run match ingestion, fixture fetching, and prediction scoring.
 
     Convenience function that:
     1. Fetches and ingests recently completed matches (last 14 days)
-    2. Fetches and inserts upcoming fixtures (next 30 days)
+    2. Scores predictions for newly completed matches
+    3. Fetches and inserts upcoming fixtures (next 30 days)
 
     Args:
         db_path: Path to SQLite database. Defaults to data/elo.db.
 
     Returns:
-        Combined summary dict with keys from both sub-operations.
+        Combined summary dict with keys from all sub-operations.
     """
     logger.info("Starting daily update...")
 
     matches_summary = await fetch_and_ingest_matches(db_path=db_path)
     logger.info("Matches: %s", matches_summary)
 
+    # Score predictions for completed matches
+    scoring_summary = await score_completed_matches(db_path=db_path)
+    logger.info("Scoring: %s", scoring_summary)
+
     fixtures_summary = await fetch_and_ingest_fixtures(db_path=db_path)
     logger.info("Fixtures: %s", fixtures_summary)
 
     return {
         "matches": matches_summary,
+        "scoring": scoring_summary,
         "fixtures": fixtures_summary,
     }

@@ -9,6 +9,7 @@ import aiosqlite
 from src.live.prediction_tracker import (
     compute_brier_score,
     get_prediction_accuracy,
+    get_prediction_history,
     generate_fixture_predictions,
     score_completed_matches,
 )
@@ -148,6 +149,7 @@ def _setup_test_db_sync(path: str):
             away_elo REAL NOT NULL,
             brier_score REAL,
             scored_at TEXT,
+            source TEXT NOT NULL DEFAULT 'live',
             CHECK (
                 (match_id IS NOT NULL AND fixture_id IS NULL) OR
                 (match_id IS NULL AND fixture_id IS NOT NULL)
@@ -493,3 +495,155 @@ class TestGenerateFixturePredictions:
 
         count = await generate_fixture_predictions(test_db)
         assert count == 2
+
+
+# --- Bug 15.2 regression tests ---
+
+
+async def _insert_scored_predictions(db_path: str) -> None:
+    """Helper: insert 3 scored predictions with different match dates."""
+    conn = await aiosqlite.connect(db_path)
+    brier1 = compute_brier_score(0.6, 0.25, 0.15, "H")
+    brier2 = compute_brier_score(0.5, 0.30, 0.20, "D")
+    brier3 = compute_brier_score(0.3, 0.20, 0.50, "A")
+
+    await conn.execute(
+        """INSERT INTO predictions (match_id, p_home, p_draw, p_away,
+           home_elo, away_elo, brier_score, scored_at, source)
+           VALUES (1, 0.6, 0.25, 0.15, 1550.0, 1480.0, ?, '2025-03-01', 'backfill')""",
+        (brier1,),
+    )
+    await conn.execute(
+        """INSERT INTO predictions (match_id, p_home, p_draw, p_away,
+           home_elo, away_elo, brier_score, scored_at, source)
+           VALUES (2, 0.5, 0.30, 0.20, 1480.0, 1550.0, ?, '2025-03-01', 'backfill')""",
+        (brier2,),
+    )
+    await conn.execute(
+        """INSERT INTO predictions (match_id, p_home, p_draw, p_away,
+           home_elo, away_elo, brier_score, scored_at, source)
+           VALUES (3, 0.3, 0.20, 0.50, 1600.0, 1450.0, ?, '2025-03-01', 'backfill')""",
+        (brier3,),
+    )
+    await conn.commit()
+    await conn.close()
+
+
+class TestBrierTrendUsesMatchDate:
+    """Bug 15.2 Task 1: time_series must use match date, not scored_at."""
+
+    @pytest.mark.asyncio
+    async def test_time_series_dates_are_match_dates_not_scored_at(self, test_db):
+        """time_series entries use YYYY-MM-DD match dates (not scored_at dates).
+
+        Match dates are 2025-01-15, 2025-01-16, 2025-01-17.
+        scored_at for all predictions is '2025-03-01'.
+        The time_series should NOT contain '2025-03-01'.
+        """
+        conn = await aiosqlite.connect(test_db)
+        # Insert 55 predictions; all scored_at = '2025-03-01'
+        match_cycle = [1, 2, 3]
+        briers = [
+            compute_brier_score(0.6, 0.25, 0.15, "H"),
+            compute_brier_score(0.5, 0.30, 0.20, "D"),
+            compute_brier_score(0.3, 0.20, 0.50, "A"),
+        ]
+        for i in range(55):
+            match_id = match_cycle[i % 3]
+            brier = briers[i % 3]
+            await conn.execute(
+                """INSERT INTO predictions (match_id, p_home, p_draw, p_away,
+                   home_elo, away_elo, brier_score, scored_at, source)
+                   VALUES (?, 0.5, 0.30, 0.20, 1500.0, 1500.0, ?, '2025-03-01', 'backfill')""",
+                (match_id, brier),
+            )
+        await conn.commit()
+        await conn.close()
+
+        result = await get_prediction_accuracy(test_db)
+        ts = result.get("time_series", [])
+
+        dates_in_ts = {pt["date"] for pt in ts}
+        assert "2025-03-01" not in dates_in_ts, (
+            "time_series must not use scored_at date '2025-03-01'"
+        )
+        # Should contain match dates (2025-01-15 to 2025-01-17 range)
+        for date in dates_in_ts:
+            assert date < "2025-02-01", (
+                f"Unexpected date {date}: should be a match date before 2025-02-01"
+            )
+
+
+class TestPredictionHistoryAllScopes:
+    """Bug 15.2 Task 2: prediction history works in all scopes."""
+
+    @pytest.mark.asyncio
+    async def test_global_scope_returns_predictions(self, test_db):
+        """get_prediction_history with no filters returns all scored predictions."""
+        await _insert_scored_predictions(test_db)
+
+        result = await get_prediction_history(test_db, page=1, per_page=10)
+        assert result["total"] > 0, "Global scope should return scored predictions"
+        assert len(result["items"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_country_scope_returns_predictions(self, test_db):
+        """get_prediction_history filtered by country returns England predictions."""
+        await _insert_scored_predictions(test_db)
+
+        result = await get_prediction_history(test_db, country="England", page=1, per_page=10)
+        assert result["total"] > 0, (
+            "Country=England scope should return Premier League predictions"
+        )
+        for item in result["items"]:
+            assert item["competition"] == "Premier League"
+
+    @pytest.mark.asyncio
+    async def test_competition_scope_returns_predictions(self, test_db):
+        """get_prediction_history filtered by competition returns matching predictions."""
+        await _insert_scored_predictions(test_db)
+
+        result = await get_prediction_history(
+            test_db, competition="Premier League", page=1, per_page=10
+        )
+        assert result["total"] > 0, (
+            "competition=Premier League scope should return predictions"
+        )
+        for item in result["items"]:
+            assert item["competition"] == "Premier League"
+
+    @pytest.mark.asyncio
+    async def test_competition_scope_excludes_other_competitions(self, test_db):
+        """Filtering by competition excludes predictions from other competitions."""
+        await _insert_scored_predictions(test_db)
+
+        result_epl = await get_prediction_history(
+            test_db, competition="Premier League", page=1, per_page=100
+        )
+        result_bl = await get_prediction_history(
+            test_db, competition="Bundesliga", page=1, per_page=100
+        )
+
+        # EPL and Bundesliga predictions should not overlap
+        epl_total = result_epl["total"]
+        bl_total = result_bl["total"]
+        global_result = await get_prediction_history(test_db, page=1, per_page=100)
+        global_total = global_result["total"]
+
+        assert epl_total + bl_total == global_total
+
+    @pytest.mark.asyncio
+    async def test_team_scope_regression(self, test_db):
+        """get_prediction_history filtered by team_id still works (regression)."""
+        await _insert_scored_predictions(test_db)
+
+        # team_id=1 is Arsenal; appears in matches 1 and 2
+        result = await get_prediction_history(test_db, team_id=1, page=1, per_page=10)
+        assert result["total"] > 0, "team_id=1 (Arsenal) should return predictions"
+
+    @pytest.mark.asyncio
+    async def test_no_scored_predictions_returns_empty(self, test_db):
+        """get_prediction_history returns empty when no scored predictions exist."""
+        result = await get_prediction_history(test_db, page=1, per_page=10)
+        assert result["total"] == 0
+        assert result["items"] == []

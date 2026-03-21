@@ -43,6 +43,11 @@ def main() -> int:
     print(f"  Matches ingested:    {matches.get('matches_ingested', 0)}")
     print(f"  Matches skipped:     {matches.get('matches_skipped', 0)}")
 
+    scoring = summary.get("scoring", {})
+    print("\nPrediction Scoring:")
+    print(f"  Predictions scored:  {scoring.get('scored_count', 0)}")
+    print(f"  Scoring errors:      {scoring.get('errors', 0)}")
+
     fixtures = summary.get("fixtures", {})
     print("\nFixtures:")
     print(f"  Fixtures fetched:    {fixtures.get('fixtures_fetched', 0)}")

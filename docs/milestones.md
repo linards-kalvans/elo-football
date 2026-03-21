@@ -1,6 +1,6 @@
 # Milestone Plan
 
-> Last updated: 2026-03-16
+> Last updated: 2026-03-19
 
 High-level roadmap for the European Football Elo Rating project. Each milestone maps to one or more sprints with detailed plans in `docs/sprint-<N>-plan.md`.
 
@@ -244,7 +244,7 @@ Decide how the Elo engine treats two-leg playoff ties (home and away) that appea
 
 ## M8: Live Data & Fixtures
 
-**Sprints:** [9](sprint-9-plan.md)–[11](sprint-11-plan.md) | **Status:** NEARLY COMPLETE | **Priority:** HIGH
+**Sprints:** [9](sprint-9-plan.md)–[11](sprint-11-plan.md) | **Status:** COMPLETED | **Priority:** HIGH
 
 Transition from historical-only data to quasi-live updates with upcoming fixtures and completed match results.
 
@@ -286,13 +286,13 @@ Transition from historical-only data to quasi-live updates with upcoming fixture
 - [x] Completed matches auto-ingested within 24 hours
 - [x] Ratings updated automatically after new results
 - [x] API rate limits and costs acceptable for production
-- [ ] Daily update cron baked into Docker image (Sprint 11)
+- [x] Daily update cron baked into Docker image (Sprint 11)
 
 ---
 
 ## M9: Prediction Tracking & Validation
 
-**Sprints:** 9–10 (backend), 11+ (frontend) | **Status:** PARTIALLY COMPLETE | **Priority:** MEDIUM
+**Sprints:** 9–11 (backend + frontend), TBD (backfill) | **Status:** PARTIALLY COMPLETE | **Priority:** MEDIUM
 
 Track predictions made by the system and compare them to actual outcomes, enabling performance monitoring and user transparency.
 
@@ -310,16 +310,34 @@ Track predictions made by the system and compare them to actual outcomes, enabli
 - Auto-insert predictions for upcoming fixtures when fetched
 - After match completes: compare prediction vs result, compute Brier score
 
+**Completed (Sprint 11):**
+- Prediction history page (`/prediction-history`) with pagination, filters, Brier coloring
+- Accuracy dashboard (`/accuracy`) with calibration chart, Brier trend, per-competition breakdown
+- Navigation links added to all pages
+
 **Remaining scope:**
 
-### 9b. Performance Metrics (partial)
+### 9a.1. Prediction Accuracy Debugging ✅ (Sprint 14)
+- **Root cause:** `score_completed_matches()` was never called in `run_daily_update()`, and fixture status was never updated to `completed` when matches were ingested
+- **Fix:** Added scoring call to daily update pipeline, added fixture status transition on match ingestion
+
+### 9a.2. Daily Update 403 Retry ✅ (Sprint 14)
+- **Fix:** Split 401/403 handling in `FootballDataClient._request()` — 401 raises immediately, 403 retries with escalating delays (10s, 60s, 120s)
+
+### 9b. Historical Prediction Backfill ✅ (Sprint 14)
+- **Solution:** `scripts/backfill_predictions.py` replays Elo computation chronologically, captures pre-match ratings, generates predictions for all post-2016 matches
+- **Results:** 20,263 backfilled predictions with Brier scores (mean Brier: 0.586), `source='backfill'` column distinguishes from live predictions
+- **Schema:** Migration 005 adds `source` column to predictions table
+- **Frontend:** Accuracy dashboard shows by-source breakdown (Live vs Backfill badges), prediction history includes source field
+
+### 9c. Performance Metrics (partial)
 - ~~Accuracy tracking~~: Brier score tracked ✅
-- **Calibration curves**: Are 60% predictions actually 60% accurate? (data collected, frontend TBD)
-- **Dashboard**: Show model performance over time (last week, month, season)
+- ~~Calibration curves~~: Calibration chart on accuracy dashboard ✅
+- ~~Dashboard~~: Accuracy dashboard with summary cards, trend, per-competition breakdown ✅
 - **Alerts**: Flag if model performance degrades below threshold
 
-### 9c. User-Facing Features
-- **Prediction history page**: "Here's what we predicted for last weekend's matches"
+### 9d. User-Facing Features
+- ~~Prediction history page~~: `/prediction-history` with scored predictions ✅
 - **Accuracy badge**: Display model's recent accuracy on prediction widget
 - **Confidence intervals**: Show uncertainty around predictions
 
@@ -327,9 +345,12 @@ Track predictions made by the system and compare them to actual outcomes, enabli
 
 **Exit criteria:**
 - [x] All predictions stored in database before matches
-- [ ] Prediction accuracy dashboard live
-- [ ] Users can view prediction history and outcomes
+- [x] Prediction accuracy dashboard live (Sprint 11)
+- [x] Users can view prediction history and outcomes (Sprint 11)
 - [x] Brier score tracked over time
+- [x] Prediction scoring pipeline working end-to-end (live predictions scored after match completion) — Sprint 14
+- [x] Daily update retries on HTTP 403 (3 attempts: 10s, 60s, 120s delays) — Sprint 14
+- [x] Historical predictions backfilled so dashboard is populated on fresh deploy (20,263 predictions) — Sprint 14
 
 ---
 
@@ -358,33 +379,202 @@ Fix the issue where all teams at the start of the dataset are initialized to the
 
 ---
 
-## M11: UI Redesign
+## M11: UI Redesign — "EloKit"
 
-**Sprints:** TBD (12) | **Status:** NOT STARTED | **Priority:** MEDIUM
+**Sprints:** [12](sprint-12-plan.md), [12.1](sprint-12.1-plan.md) | **Status:** COMPLETED
 
-Redesign the frontend based on user-provided mock designs. May require new features and components depending on the design vision.
+Complete UI redesign replacing multi-page layout with a single unified "EloKit" layout. All contexts (global, nation, league, team) share the same page structure with content scoped to the navigation context.
 
-**Scope:**
-- Implement UI from provided mock designs (Figma, screenshots, or similar)
-- Visual identity refresh (colors, typography, layout, spacing)
-- Improved mobile experience and responsive design
-- New pages or components as required by the designs
-- Potential new features driven by the redesign (TBD based on mocks)
+**Key deliverables:**
 
-**Depends on:** M4 (current web app as baseline), mock designs provided by stakeholder
+### Sprint 12 — Core Redesign ✅
+- **Unified layout**: Single `index.html` replaces 8 separate templates
+- **URL scheme**: `/{nation}/{league}/{team}` — hierarchical context-aware routing
+- **Sidebar navigation**: Nations → leagues/cups, European competitions, hamburger on mobile
+- **4 content sections**: Fixtures, Accuracy widget, Elo history chart, Rankings table
+- **Context-aware API endpoints**: `/api/fixtures/scoped`, `/api/chart/scoped`, `/api/accuracy/scoped`, `/api/rankings/context`, `/api/sidebar`
+- **Slug resolution**: URL-safe slugs for nations, competitions, and teams
+- **EloKit branding**: Logo, generic icons (club, league, cup), breadcrumb navigation
+- Old templates retired, old routes redirect to new equivalents
 
-**Key questions (to resolve when mocks are provided):**
-- Does the redesign require new API endpoints or data?
-- Are there new pages/features beyond restyling existing ones?
-- Should we adopt a component library or design system?
-- Does the redesign affect the tech stack (e.g., move from Tailwind CDN to built CSS)?
+### Sprint 12.1 — Polish & Bug Fixes ✅
+- **Data loading regression fix**: Nested `<button>` inside `<button>` broke DOM tree; nested `x-data` scoped state incorrectly
+- **Fixtures pagination**: 3 finished + 3 upcoming by default, "Load more..." with offset-based pagination
+- **Rankings display**: Top 5 + team context (±3 surrounding teams) with "View all" toggle
+- **Chart team management**: Add/remove teams via search, zoom controls, `chart.updateOptions()` for live series updates
+- **Banner**: "Club Rating Analytics" inline in header
 
 **Exit criteria:**
-- [ ] All pages match provided mock designs
-- [ ] Responsive on mobile, tablet, and desktop
-- [ ] Any new features required by the designs are functional
-- [ ] Existing functionality preserved (no regressions)
-- [ ] Accessibility basics (contrast, keyboard nav, semantic HTML)
+- [x] Single unified layout for all 4 context levels (global, nation, league, team)
+- [x] Sidebar navigation with nations, leagues, and European competitions
+- [x] Fixtures, accuracy, chart, and rankings all scope correctly to context
+- [x] EloKit branding throughout
+- [x] Mobile responsive with hamburger sidebar
+- [x] Existing API endpoints backward compatible
+- [x] All 360 tests passing, no regressions
+- [x] Old templates removed, old URLs redirect
+
+---
+
+## M12: Flags & Logos
+
+**Sprints:** 13 (nations/competitions), TBD (clubs) | **Status:** PHASE 1 COMPLETE | **Priority:** MEDIUM
+
+Add visual identity assets — country flags, league/cup competition logos, and club crests — to enrich the UI throughout EloKit.
+
+### Phase 1: Nation Flags & Competition Logos (Sprint 13) ✅
+- **Country flags**: 6 SVG flags (flag-icons, MIT) in sidebar and breadcrumbs
+- **League logos**: Minimal styled SVG badges for 5 domestic leagues (PL, LL, BL, SA, L1)
+- **Cup competition logos**: CL, EL, Conference League SVG badges
+- **Integration points**: Sidebar nav items, breadcrumbs, fixtures match cards
+- **API**: `flag_url` on `SidebarNation`, `logo_url` on `SidebarCompetition`, `competition_logo_url` on `ScopedFixtureEntry`
+- **364 tests passing** (4 new tests for URL fields)
+
+### Phase 2: Club Logos (Future)
+- **Club crests**: Fetch logos for all 325+ teams
+- **Integration points**: Rankings rows, team detail header, chart legends, fixtures match cards
+- **Data source**: TBD — evaluate football-data.org API (crest URLs), Wikipedia/Wikidata, or curated asset set
+- **Fallback**: Generic club icon (existing) for teams without logos
+
+**Depends on:** M11 (EloKit layout — integration points exist)
+
+**Key questions to resolve:**
+- Data source and licensing for flags (e.g., flagcdn.com, country-flags npm, bundled SVGs)?
+- Data source for league/cup logos (official assets, Wikipedia, curated)?
+- Data source for club crests (football-data.org API provides `crestUrl`, Wikipedia)?
+- Bundle assets locally vs. CDN/hotlink vs. store in DB?
+
+**Exit criteria:**
+- [x] Nation flags displayed in sidebar and breadcrumbs
+- [x] League and cup logos displayed in sidebar and fixtures
+- [ ] Club crests displayed in rankings, fixtures, and team pages (Phase 2)
+- [x] Graceful fallback for missing assets (generic icons)
+- [x] Assets load fast (SVG preferred)
+
+---
+
+## M13: Detailed Prediction Accuracy View
+
+**Sprints:** 15 (core accuracy view), 15.1 (charts, Elo deltas, polish) | **Status:** COMPLETED | **Priority:** HIGH
+
+The EloKit accuracy widget shows a compact summary (total predictions, Brier score, accuracy %, trend) with an inline "View all" expansion that displays by-source and per-competition breakdown. However, the "View all" link is non-functional, and the existing `/api/prediction-accuracy` endpoint already returns rich data (calibration buckets, time series, median Brier) that isn't rendered anywhere in the EloKit UI. The old dedicated `/accuracy` and `/prediction-history` pages were retired in Sprint 12's EloKit redesign and never rebuilt within the unified layout.
+
+**Scope:**
+
+### 13a. Fix "View all" Accuracy Link ✅ (Sprint 15)
+- "View details" link opens dedicated accuracy detail panel within EloKit
+- `accuracyView: 'compact' | 'detail'` state toggle with back link
+- Parallel fetch of grid, history, and expanded detail on open
+
+### 13b. Calibration Visualization
+- **Calibration chart**: Render the 10-bucket calibration data from `/api/prediction-accuracy` as a visual chart (predicted probability vs. actual outcome rate)
+- **Perfect calibration reference line**: Diagonal reference showing ideal calibration
+- Uses existing `calibration` field from `PredictionAccuracyResponse`
+
+### 13c. Brier Score Time Series
+- **Rolling Brier trend chart**: ApexCharts line/area chart showing Brier score evolution over time
+- Uses existing `time_series` field from `PredictionAccuracyResponse`
+- Allows users to see if model performance is improving or degrading
+
+### 13d. Prediction History Integration ✅ (Sprint 15)
+- **Match Prediction Log**: Paginated, searchable table of all scored predictions
+- **Multi-word team search**: Whitespace-separated tokens matched across home+away team names (debounced 300ms)
+- **Rich columns**: Date, match (with score), competition, probability bars (H/D/A), result badge, Brier score (color gradient), source badge (Live/Backfill)
+- **Correct prediction highlighting**: Subtle green row background for correct predictions
+- **Pagination**: Server-side with prev/next, "Page X of Y", resets on new search
+
+### 13d.1. Prediction Performance Grid ✅ (Sprint 15)
+- **3×3 confusion matrix**: Predicted outcome (H/D/A) vs actual outcome with counts and percentages
+- **API endpoint**: `GET /api/accuracy/grid` with country, competition, team_id, source scoping
+- **Heatmap styling**: Green diagonal (correct), gray off-diagonal, intensity scales with percentage
+- **Row totals and grand total** with accuracy percentage
+- **Responsive**: Abbreviated labels (H/D/A) on mobile
+
+### 13e. Context-Aware Scoping ✅ (Sprint 15)
+- All accuracy detail views respect the current navigation context (global, nation, league, team)
+- Extended `/api/prediction-accuracy` with `country` and `team_id` filters (backward compatible)
+- Extended `/api/prediction-history` with `search`, `country`, and `team_id` filters
+
+### 13f. API Contract Documentation Update (Sprint 15.1)
+- **Review and update** `docs/api-contract.md` to cover all current endpoints (currently only documents 7 original Sprint 6 endpoints)
+- **Missing endpoints**: `/api/fixtures/scoped`, `/api/chart/scoped`, `/api/accuracy/scoped`, `/api/rankings/context`, `/api/sidebar`, `/api/prediction-accuracy`, `/api/prediction-history`, `/api/accuracy/grid`, `/api/team-stats/{team_id}`
+- **Update data coverage stats**: 325 teams, 31,789 matches, 2010-2026 (was 300/20,833/2015-2026)
+- **Document new query parameters**: search, country, team_id scoping across accuracy and history endpoints
+- **Update changelog** with Sprints 7-15 additions
+- **Role:** `/tech-writer`
+
+### 13g. Elo Change on Completed Fixtures
+- **Elo delta display**: Show Elo rating change (e.g., +12 / -8) for each team on completed match cards in the fixtures widget
+- Requires exposing pre-match and post-match Elo ratings (or the delta) from the API for completed matches
+- Extend `/api/fixtures/scoped` response to include `home_elo_change` and `away_elo_change` fields on completed fixtures
+- Color-coded: green for positive, red for negative
+
+### 13h. Logo & Breadcrumb Polish (M12 follow-up)
+- **Increase logo sizes**: Sidebar and breadcrumb logos from 20×20 to 30×30 pixels
+- **Breadcrumb logos for all levels**: Show competition logo and nation flag at every breadcrumb segment (currently only nation flag shown in breadcrumbs; competition logo missing at league/team levels)
+
+**Depends on:** M9 (prediction tracking complete), M11 (EloKit layout), M12 (flags & logos)
+
+**Exit criteria:**
+- [x] "View all" link on accuracy widget navigates to/renders detailed accuracy view (Sprint 15)
+- [x] Calibration chart rendered from existing API data (Sprint 15.1)
+- [x] Brier score time series chart visible (Sprint 15.1)
+- [x] Prediction history browsable within EloKit (with pagination and filters) (Sprint 15)
+- [x] All views scoped to current navigation context (Sprint 15)
+- [x] Existing 20,263+ predictions displayed with source labels (Sprint 15)
+- [x] 3×3 Prediction Performance Grid with heatmap styling (Sprint 15)
+- [x] Multi-word team search across home+away names (Sprint 15)
+- [x] 388 tests passing (24 new, no regressions) (Sprint 15)
+- [x] API contract doc updated to cover all 17 endpoints (Sprint 15.1)
+- [x] All logos increased in size (sidebar, breadcrumbs, fixtures) (Sprint 15.1)
+- [x] Breadcrumbs show flag/logo at every navigation level (Sprint 15.1)
+- [x] Completed fixture cards show Elo change per team (color-coded +/-) (Sprint 15.1)
+
+---
+
+## M14: Momentum Metric
+
+**Status:** DEPRIORITIZED (research complete 2026-03-19) | **Priority:** LOW
+
+Track and display an "Elo momentum" metric — an exponentially weighted moving average (EWMA) of recent Elo rating changes, intended to capture whether a team is trending up or down independent of their absolute rating.
+
+### Research findings (2026-03-19)
+
+Two architectures were tested against 20,263 scored predictions (display period 2016-2026):
+
+**Architecture A: Additive Elo adjustment** — momentum adjusts effective Elo before recomputing probabilities.
+- Best improvement: **+0.000%** (no change vs baseline)
+
+**Architecture B: Independent predictor + linear blend** — momentum generates a separate 3-way probability distribution (Davidson logistic model) blended with Elo probabilities via `P = α·P_elo + (1-α)·P_momentum`.
+- Grid searched 240 combinations per momentum config (α, spread, draw steepness)
+- Best result: **−0.38%** (momentum blend is worse than pure Elo)
+- Pure momentum predictor in isolation: LL=1.265 vs Elo 0.988 (~28% worse)
+
+**Momentum does correlate with outcomes** (home-win matches show positive momentum differential, away-win matches show negative) — but Elo already encodes this information. Adding momentum double-counts recent performance already reflected in ratings.
+
+**Consistent with academic literature**: Hvattum & Arntzen (2010) found form variables add minimal predictive power beyond Elo in football.
+
+### Possible future scope (display-only)
+
+Momentum could be shown as a UX feature — "Teams in Form" ranking, per-team trend indicator — without affecting predictions. Implementation cost is low (compute during daily update, expose via API).
+
+**Formula:**
+```
+Momentum = Σ[i=0..N-1] w(i) · Δ_elo(i)
+w(i) = λ^i / Σλ^j   (most recent match has highest weight)
+Recommended: λ=0.85, N=10
+```
+
+**Not recommended**: using momentum in match probability calculations.
+
+**Research code:** `notebooks/momentum_blend_validation.py`, `notebooks/momentum_research_optimized.py`
+**Research report:** `docs/momentum-research-summary.md`
+
+**Exit criteria (if display-only feature pursued):**
+- [ ] Momentum computed during daily update and stored in DB
+- [ ] `GET /api/teams/{team_id}/momentum` endpoint
+- [ ] "Teams in Form" widget on EloKit global/league context
+- [ ] **Not** used in `/api/prediction` probability calculations
 
 ---
 
@@ -400,12 +590,19 @@ Redesign the frontend based on user-provided mock designs. May require new featu
 | 8 | M4 | Prediction page, Docker/CI, chart perf | COMPLETED |
 | 9 | M10, M8 (groundwork), M9 (groundwork) | Calibration fix, fixtures/predictions schema, ADR-004 | COMPLETED |
 | **10** | **M8, M9 (partial)** | **Data persistence, live API client, ingestion pipeline, fixtures page, prediction tracking** | **COMPLETED** |
-| **11** | **M8, M9** | **Dockerized daily update cron, prediction accuracy dashboard, prediction history frontend** | **PLANNED** |
-| **12** | **M11** | **UI redesign from mock designs** | **PLANNED** |
-| **13** | **M4.5** | **Chart export (PNG/CSV), presets, shareable configs** | **PLANNED** |
-| **14** | **M5** | **Bayesian parameter optimization (Optuna), tier weight sweep** | **PLANNED** |
-| **15** | **M7** | **Two-leg tie analysis & modeling** | **PLANNED** |
-| **16–17** | **M6** | **Full UEFA league expansion (data sourcing + frontend)** | **PLANNED** |
+| **11** | **M8, M9 (partial)** | **Dockerized daily update cron, prediction accuracy dashboard, prediction history frontend** | **COMPLETED** |
+| **12** | **M11** | **EloKit UI redesign — unified layout, sidebar nav, context-aware routing** | **COMPLETED** |
+| **12.1** | **M11** | **EloKit polish — data loading fix, fixtures pagination, chart controls, rankings display** | **COMPLETED** |
+| **13** | **M12** | **Nation flags, league/cup competition logos** | **COMPLETED** |
+| **14** | **M9 (9a.1, 9a.2, 9b)** | **Prediction scoring pipeline fix, 403 retry, historical prediction backfill (20,263 predictions)** | **COMPLETED** |
+| **15** | **M13 (13a, 13d, 13d.1, 13e)** | **Detailed accuracy view: Prediction Performance Grid, searchable Match Prediction Log, context-aware scoping** | **COMPLETED** |
+| **15.1** | **M13 (13b–c, 13f–h)** | **Calibration chart, Brier time series, API contract doc update, Elo change on fixtures, logo & breadcrumb polish** | **COMPLETED** |
+| **15.2** | **M9, M13** | **Bug fixes: Brier trend time axis (use match date), prediction history empty in non-team scopes** | **PLANNED** |
+| **16** | **M4.5** | **Chart export (PNG/CSV), presets, shareable configs** | **PLANNED** |
+| **17** | **M5** | **Bayesian parameter optimization (Optuna), tier weight sweep** | **PLANNED** |
+| **18** | **M7** | **Two-leg tie analysis & modeling** | **PLANNED** |
+| **19–20** | **M6** | **Full UEFA league expansion (data sourcing + frontend)** | **PLANNED** |
+| **TBD** | **M12 (Phase 2)** | **Club logos/crests for 325+ teams** | **PLANNED** |
 
 ---
 
@@ -419,22 +616,24 @@ M1 (Algorithm) ✅
        │     │     ├── Sprint 6: Backend + API docs ✅
        │     │     ├── Sprint 7: Frontend + charts ✅
        │     │     └── Sprint 8: Predictions, Docker, CI/CD ✅
-       │     │           ├──▶ M4.5 (Advanced Chart Features) [PARTIAL]
-       │     │           └──▶ M11 (UI Redesign) [PLANNED]
+       │     │           ├──▶ M4.5 (Advanced Chart Features) [PARTIAL — Sprint 16]
+       │     │           └──▶ M11 (UI Redesign — EloKit) ✅ [Sprints 12, 12.1]
+       │     │                 └──▶ M12 (Flags & Logos) [Sprint 13 + TBD]
        │     │
        │     ├──▶ M10 (Elo Calibration Fix) ✅ [Sprint 9]
        │     │
        │     ├──▶ M8 (Live Data & Fixtures) ✅
        │     │     ├── Sprint 9: Groundwork (ADR-004, fixtures/predictions tables) ✅
        │     │     └── Sprint 10: Persistence, API client, ingestion, fixtures page ✅
-       │     │           └──▶ M9 (Prediction Tracking) [PARTIAL — backend done, frontend Sprint 11]
+       │     │           └──▶ M9 (Prediction Tracking) [PARTIAL — 9b backfill in Sprint 14]
+       │     │                 └──▶ M13 (Detailed Accuracy View) [Sprint 15]
        │     │
-       │     └──▶ M5 (Advanced Parameter Optimization) [Sprint 14]
+       │     └──▶ M5 (Advanced Parameter Optimization) [Sprint 16]
        │
-       ├──▶ M6 (Full UEFA League Coverage) [Sprints 16-17]
+       ├──▶ M6 (Full UEFA League Coverage) [Sprints 19-20]
        │     [depends on M2 + M3 + M4]
        │
-       └──▶ M7 (Two-Leg Tie Modeling) [Sprint 15]
+       └──▶ M7 (Two-Leg Tie Modeling) [Sprint 18]
              [depends on M2]
 ```
 
@@ -450,6 +649,7 @@ M1 (Algorithm) ✅
 | Initial rating calibration method | M10 | ✅ DECIDED | Warm-up period (2010-2016), implemented in Sprint 9 |
 | Data persistence & migrations | M8 | ✅ DECIDED | Sprint 10 — DB as persistent state, numbered SQL migrations (`src/db/migrate.py`) |
 | Tier weight optimization | M5 | ✅ DECIDED | Optuna Bayesian (150 trials): hand-picked defaults confirmed adequate (+0.015%) |
+| Momentum metric for predictions | M14 | ✅ DECIDED (REJECTED) | Research 2026-03-19: adds −0.38% to 0.000% value; Elo already encodes form |
 | Optimization framework | M5 | PENDING | Optuna / scikit-optimize / custom |
 | Per-league vs. global parameters | M5 | PENDING | — |
 | Full UEFA data source strategy | M6 | PENDING | — |

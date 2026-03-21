@@ -1,0 +1,1605 @@
+{% extends "base.html" %}
+
+{% block title %}
+{% if level == 'team' %}{{ team_name }} — EloKit{% elif level == 'league' %}{{ competition }} — EloKit{% elif level == 'nation' %}{{ country }} — EloKit{% else %}EloKit — Club Rating Analytics{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.2/dist/apexcharts.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div x-data="eloPage()" x-init="init()" class="space-y-6">
+
+    <!-- ============================================================ -->
+    <!-- Section 1: Fixtures                                          -->
+    <!-- ============================================================ -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <!-- Header (clickable to collapse, using div not button) -->
+        <div @click="fixturesOpen = !fixturesOpen"
+             class="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-4 cursor-pointer hover:bg-gray-50 transition-colors select-none">
+            <h2 class="text-lg font-semibold text-gray-900">Fixtures</h2>
+            <svg :class="fixturesOpen ? 'rotate-180' : ''"
+                 class="w-5 h-5 text-gray-400 transition-transform duration-200"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="fixturesOpen && loading.fixtures" class="px-5 pb-5">
+            <template x-for="i in 3" :key="'skel-fix-'+i">
+                <div class="animate-pulse flex items-center gap-4 py-3 border-t border-gray-100">
+                    <div class="w-6 h-6 bg-gray-200 rounded"></div>
+                    <div class="flex-1 space-y-2">
+                        <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                        <div class="h-3 bg-gray-100 rounded w-1/2"></div>
+                    </div>
+                    <div class="h-4 bg-gray-200 rounded w-16"></div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Loaded content -->
+        <div x-show="fixturesOpen && !loading.fixtures" x-cloak class="divide-y divide-gray-100">
+            <!-- Empty state -->
+            <div x-show="fixtures.finished.length === 0 && fixtures.upcoming.length === 0"
+                 class="px-5 py-8 text-center text-sm text-gray-400">
+                No fixtures available for this context.
+            </div>
+
+            <!-- Load more older finished -->
+            <div x-show="fixtures.hasMoreFinished"
+                 class="px-5 py-2 text-center">
+                <a href="#" @click.prevent="loadMoreFinished()"
+                   class="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors">
+                    Load more...
+                </a>
+            </div>
+
+            <!-- Finished matches (muted) -->
+            <template x-for="match in fixtures.finished" :key="'fin-'+match.date+match.home_team.id+match.away_team.id">
+                <div class="px-3 py-3 sm:px-5 opacity-70 hover:opacity-100 transition-opacity">
+                    <div class="flex items-center gap-2 sm:gap-3">
+                        <!-- Competition icon -->
+                        <img :src="match.competition_logo_url || competitionIcon(match.competition)"
+                             class="w-6 h-6 shrink-0 hidden sm:block"
+                             :class="match.competition_logo_url ? '' : 'opacity-50'"
+                             alt="">
+
+                        <!-- Home team -->
+                        <div class="flex-1 text-right min-w-0">
+                            <a :href="teamUrl(match.home_team)"
+                               class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-brand-600 transition-colors max-w-full">
+                                <span x-text="match.home_team.name" class="truncate"></span>
+                                <img src="/static/icons/club.svg" class="w-4 h-4 opacity-40 shrink-0" alt="">
+                            </a>
+                            <div class="flex items-center justify-end gap-1.5">
+                                <span x-show="match.home_elo_change != null"
+                                      class="text-xs font-medium"
+                                      :class="match.home_elo_change > 0 ? 'text-green-600' : match.home_elo_change < 0 ? 'text-red-500' : 'text-gray-400'"
+                                      x-text="(match.home_elo_change > 0 ? '+' : '') + Math.round(match.home_elo_change)"></span>
+                                <span class="text-xs text-gray-400 hidden sm:inline" x-text="match.home_elo_before != null ? Math.round(match.home_elo_before) : (match.prediction ? Math.round(match.prediction.home_elo) : '')"></span>
+                            </div>
+                        </div>
+
+                        <!-- Score -->
+                        <div class="flex flex-col items-center shrink-0 min-w-[48px] sm:min-w-[60px]">
+                            <span class="text-sm font-bold text-gray-900"
+                                  x-text="match.home_goals + ' : ' + match.away_goals"></span>
+                            <span class="text-[10px] text-gray-400" x-text="formatDate(match.date)"></span>
+                        </div>
+
+                        <!-- Away team -->
+                        <div class="flex-1 text-left min-w-0">
+                            <a :href="teamUrl(match.away_team)"
+                               class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-brand-600 transition-colors max-w-full">
+                                <img src="/static/icons/club.svg" class="w-4 h-4 opacity-40 shrink-0" alt="">
+                                <span x-text="match.away_team.name" class="truncate"></span>
+                            </a>
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-xs text-gray-400 hidden sm:inline" x-text="match.away_elo_before != null ? Math.round(match.away_elo_before) : (match.prediction ? Math.round(match.prediction.away_elo) : '')"></span>
+                                <span x-show="match.away_elo_change != null"
+                                      class="text-xs font-medium"
+                                      :class="match.away_elo_change > 0 ? 'text-green-600' : match.away_elo_change < 0 ? 'text-red-500' : 'text-gray-400'"
+                                      x-text="(match.away_elo_change > 0 ? '+' : '') + Math.round(match.away_elo_change)"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Probability pills -->
+                    <div x-show="match.prediction" class="mt-2 flex items-center justify-center gap-1.5 text-xs">
+                        <!-- Home probability -->
+                        <span class="px-2 py-0.5 rounded font-medium"
+                              :class="[
+                                  match.prediction.p_home < 0.15 ? 'bg-emerald-50 text-emerald-800' :
+                                  match.prediction.p_home < 0.30 ? 'bg-emerald-100 text-emerald-800' :
+                                  match.prediction.p_home < 0.55 ? 'bg-emerald-200 text-emerald-800' :
+                                  match.prediction.p_home < 0.75 ? 'bg-emerald-400 text-white' : 'bg-emerald-600 text-white',
+                                  (match.home_goals != null && match.home_goals > match.away_goals) ? 'ring-2 ring-emerald-700' : ''
+                              ]"
+                              x-text="(match.prediction.p_home * 100).toFixed(0) + '%'"></span>
+                        <!-- Draw probability -->
+                        <span class="px-2 py-0.5 rounded font-medium"
+                              :class="[
+                                  match.prediction.p_draw < 0.15 ? 'bg-yellow-50 text-yellow-800' :
+                                  match.prediction.p_draw < 0.30 ? 'bg-yellow-100 text-yellow-800' :
+                                  match.prediction.p_draw < 0.55 ? 'bg-yellow-200 text-yellow-800' :
+                                  match.prediction.p_draw < 0.75 ? 'bg-yellow-400 text-white' : 'bg-yellow-600 text-white',
+                                  (match.home_goals != null && match.home_goals === match.away_goals) ? 'ring-2 ring-yellow-700' : ''
+                              ]"
+                              x-text="(match.prediction.p_draw * 100).toFixed(0) + '%'"></span>
+                        <!-- Away probability -->
+                        <span class="px-2 py-0.5 rounded font-medium"
+                              :class="[
+                                  match.prediction.p_away < 0.15 ? 'bg-blue-50 text-blue-800' :
+                                  match.prediction.p_away < 0.30 ? 'bg-blue-100 text-blue-800' :
+                                  match.prediction.p_away < 0.55 ? 'bg-blue-200 text-blue-800' :
+                                  match.prediction.p_away < 0.75 ? 'bg-blue-400 text-white' : 'bg-blue-600 text-white',
+                                  (match.home_goals != null && match.home_goals < match.away_goals) ? 'ring-2 ring-blue-700' : ''
+                              ]"
+                              x-text="(match.prediction.p_away * 100).toFixed(0) + '%'"></span>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Separator between finished and upcoming -->
+            <div x-show="fixtures.finished.length > 0 && fixtures.upcoming.length > 0"
+                 class="px-5 py-1">
+                <div class="border-t-2 border-dashed border-gray-200"></div>
+            </div>
+
+            <!-- Upcoming fixtures (brighter) -->
+            <template x-for="match in fixtures.upcoming" :key="'upc-'+match.date+match.home_team.id+match.away_team.id">
+                <div class="px-3 py-3 sm:px-5">
+                    <div class="flex items-center gap-3">
+                        <!-- Competition icon -->
+                        <img :src="match.competition_logo_url || competitionIcon(match.competition)"
+                             class="w-6 h-6 shrink-0 hidden sm:block"
+                             :class="match.competition_logo_url ? '' : 'opacity-50'"
+                             alt="">
+
+                        <!-- Home team -->
+                        <div class="flex-1 text-right min-w-0">
+                            <a :href="teamUrl(match.home_team)"
+                               class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-brand-600 transition-colors max-w-full">
+                                <span x-text="match.home_team.name" class="truncate"></span>
+                                <img src="/static/icons/club.svg" class="w-4 h-4 opacity-40 shrink-0" alt="">
+                            </a>
+                            <div class="text-xs text-gray-400 hidden sm:block" x-text="match.prediction ? 'Elo ' + Math.round(match.prediction.home_elo) : ''"></div>
+                        </div>
+
+                        <!-- Date/time -->
+                        <div class="flex flex-col items-center shrink-0 min-w-[48px] sm:min-w-[60px]">
+                            <span class="text-xs font-semibold text-brand-600" x-text="formatDate(match.date)"></span>
+                        </div>
+
+                        <!-- Away team -->
+                        <div class="flex-1 text-left min-w-0">
+                            <a :href="teamUrl(match.away_team)"
+                               class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-brand-600 transition-colors max-w-full">
+                                <img src="/static/icons/club.svg" class="w-4 h-4 opacity-40 shrink-0" alt="">
+                                <span x-text="match.away_team.name" class="truncate"></span>
+                            </a>
+                            <div class="text-xs text-gray-400 hidden sm:block" x-text="match.prediction ? 'Elo ' + Math.round(match.prediction.away_elo) : ''"></div>
+                        </div>
+                    </div>
+
+                    <!-- Probability pills -->
+                    <div x-show="match.prediction" class="mt-2 flex items-center justify-center gap-1.5 text-xs">
+                        <!-- Home probability -->
+                        <span class="px-2 py-0.5 rounded font-medium"
+                              :class="[
+                                  match.prediction.p_home < 0.15 ? 'bg-emerald-50 text-emerald-800' :
+                                  match.prediction.p_home < 0.30 ? 'bg-emerald-100 text-emerald-800' :
+                                  match.prediction.p_home < 0.55 ? 'bg-emerald-200 text-emerald-800' :
+                                  match.prediction.p_home < 0.75 ? 'bg-emerald-400 text-white' : 'bg-emerald-600 text-white'
+                              ]"
+                              x-text="(match.prediction.p_home * 100).toFixed(0) + '%'"></span>
+                        <!-- Draw probability -->
+                        <span class="px-2 py-0.5 rounded font-medium"
+                              :class="[
+                                  match.prediction.p_draw < 0.15 ? 'bg-yellow-50 text-yellow-800' :
+                                  match.prediction.p_draw < 0.30 ? 'bg-yellow-100 text-yellow-800' :
+                                  match.prediction.p_draw < 0.55 ? 'bg-yellow-200 text-yellow-800' :
+                                  match.prediction.p_draw < 0.75 ? 'bg-yellow-400 text-white' : 'bg-yellow-600 text-white'
+                              ]"
+                              x-text="(match.prediction.p_draw * 100).toFixed(0) + '%'"></span>
+                        <!-- Away probability -->
+                        <span class="px-2 py-0.5 rounded font-medium"
+                              :class="[
+                                  match.prediction.p_away < 0.15 ? 'bg-blue-50 text-blue-800' :
+                                  match.prediction.p_away < 0.30 ? 'bg-blue-100 text-blue-800' :
+                                  match.prediction.p_away < 0.55 ? 'bg-blue-200 text-blue-800' :
+                                  match.prediction.p_away < 0.75 ? 'bg-blue-400 text-white' : 'bg-blue-600 text-white'
+                              ]"
+                              x-text="(match.prediction.p_away * 100).toFixed(0) + '%'"></span>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Load more upcoming -->
+            <div x-show="fixtures.hasMoreUpcoming"
+                 class="px-5 py-2 text-center">
+                <a href="#" @click.prevent="loadMoreUpcoming()"
+                   class="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors">
+                    Load more...
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 2: Accuracy Widget                                   -->
+    <!-- ============================================================ -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 sm:px-5 sm:py-4">
+
+            <!-- ===== Compact View ===== -->
+            <div x-show="accuracyView === 'compact'">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-lg font-semibold text-gray-900">Accuracy</h2>
+                    <a href="#" @click.prevent="openAccuracyDetail()"
+                        x-show="accuracy && accuracy.total_predictions > 0"
+                        class="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors whitespace-nowrap">
+                        View details
+                    </a>
+                </div>
+
+                <!-- Loading -->
+                <div x-show="loading.accuracy" class="animate-pulse flex items-center gap-6">
+                    <div class="h-12 w-24 bg-gray-200 rounded"></div>
+                    <div class="space-y-2 flex-1">
+                        <div class="h-3 bg-gray-200 rounded w-1/3"></div>
+                        <div class="h-3 bg-gray-100 rounded w-1/4"></div>
+                    </div>
+                </div>
+
+                <!-- Loaded -->
+                <div x-show="!loading.accuracy" x-cloak>
+                    <!-- Empty state -->
+                    <div x-show="!accuracy || accuracy.total_predictions === 0"
+                         class="py-4 text-center text-sm text-gray-400">
+                        No scored predictions yet.
+                    </div>
+
+                    <!-- Data -->
+                    <div x-show="accuracy && accuracy.total_predictions > 0" class="flex items-center gap-6">
+                        <!-- Main percentage -->
+                        <div class="text-center">
+                            <div class="text-4xl font-bold text-gray-900"
+                                 x-text="accuracy ? (accuracy.accuracy_pct !== null ? accuracy.accuracy_pct.toFixed(1) + '%' : '--') : '--'">
+                            </div>
+                            <div class="text-xs text-gray-400 mt-0.5">correct predictions</div>
+                        </div>
+
+                        <!-- Trend + Brier -->
+                        <div class="space-y-1.5">
+                            <!-- Trend badge -->
+                            <div x-show="accuracy && accuracy.trend_pct !== null">
+                                <span class="inline-flex items-center gap-0.5 text-sm font-semibold px-2 py-0.5 rounded-full"
+                                      :class="accuracy && accuracy.trend_pct >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'">
+                                    <span x-text="accuracy && accuracy.trend_pct >= 0 ? '+' : ''"></span>
+                                    <span x-text="accuracy ? accuracy.trend_pct.toFixed(1) + '%' : ''"></span>
+                                </span>
+                            </div>
+                            <!-- Brier score -->
+                            <div x-show="accuracy && accuracy.mean_brier_score !== null"
+                                 class="text-xs text-gray-500">
+                                Brier: <span x-text="accuracy ? accuracy.mean_brier_score.toFixed(4) : ''"></span>
+                            </div>
+                            <!-- Count -->
+                            <div class="text-xs text-gray-400"
+                                 x-text="accuracy ? accuracy.total_predictions + ' predictions' : ''">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Detail View ===== -->
+            <div x-show="accuracyView === 'detail'">
+                <!-- Back link + Title -->
+                <div class="flex items-center gap-3 mb-4">
+                    <a href="#" @click.prevent="destroyAccuracyCharts(); accuracyView = 'compact'"
+                       class="inline-flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                        Back
+                    </a>
+                    <h2 class="text-lg font-semibold text-gray-900">Prediction Accuracy</h2>
+                </div>
+
+                <!-- Summary stats row -->
+                <div x-show="accuracy && accuracy.total_predictions > 0"
+                     class="grid grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-gray-900"
+                             x-text="accuracy ? (accuracy.accuracy_pct !== null ? accuracy.accuracy_pct.toFixed(1) + '%' : '--') : '--'"></div>
+                        <div class="text-xs text-gray-500 mt-0.5">Accuracy</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-gray-900"
+                             x-text="accuracy ? (accuracy.mean_brier_score !== null ? accuracy.mean_brier_score.toFixed(4) : '--') : '--'"></div>
+                        <div class="text-xs text-gray-500 mt-0.5">Brier Score</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-gray-900"
+                             x-text="accuracy ? accuracy.total_predictions.toLocaleString() : '--'"></div>
+                        <div class="text-xs text-gray-500 mt-0.5">Predictions</div>
+                    </div>
+                </div>
+
+                <!-- ===== Prediction Performance Grid (Task 5) ===== -->
+                <div class="mb-6">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Prediction Performance Grid</h3>
+
+                    <!-- Grid loading -->
+                    <div x-show="loadingGrid" class="animate-pulse h-48 bg-gray-100 rounded"></div>
+
+                    <!-- Grid empty -->
+                    <div x-show="!loadingGrid && !gridData"
+                         class="py-6 text-center text-sm text-gray-400">
+                        No prediction data available for the grid.
+                    </div>
+
+                    <!-- Grid content -->
+                    <template x-if="!loadingGrid && gridData">
+                    <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                        <table class="w-full text-sm border-collapse">
+                            <thead>
+                                <tr>
+                                    <th class="py-2 px-1 sm:px-3"></th>
+                                    <th class="py-2 px-1 sm:px-3" colspan="3">
+                                        <div class="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                                            Predicted
+                                        </div>
+                                    </th>
+                                    <th class="py-2 px-1 sm:px-3"></th>
+                                </tr>
+                                <tr class="border-b border-gray-200">
+                                    <th class="py-2 px-1 sm:px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-left">
+                                        Actual
+                                    </th>
+                                    <th class="py-2 px-1 sm:px-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                        <span class="hidden sm:inline">Home</span><span class="sm:hidden">H</span>
+                                    </th>
+                                    <th class="py-2 px-1 sm:px-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                        <span class="hidden sm:inline">Draw</span><span class="sm:hidden">D</span>
+                                    </th>
+                                    <th class="py-2 px-1 sm:px-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                        <span class="hidden sm:inline">Away</span><span class="sm:hidden">A</span>
+                                    </th>
+                                    <th class="py-2 px-1 sm:px-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                        Total
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Row: Actual Home -->
+                                <tr class="border-b border-gray-100">
+                                    <td class="py-3 px-1 sm:px-3 font-medium text-gray-700 text-sm">
+                                        <span class="hidden sm:inline">Home</span><span class="sm:hidden">H</span>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_home.predicted_home.pct_of_total, true)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_home.predicted_home.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_home.predicted_home.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_home.predicted_draw.pct_of_total, false)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_home.predicted_draw.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_home.predicted_draw.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_home.predicted_away.pct_of_total, false)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_home.predicted_away.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_home.predicted_away.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center text-sm font-semibold text-gray-600" x-text="gridData.actual_home.total.toLocaleString()"></td>
+                                </tr>
+                                <!-- Row: Actual Draw -->
+                                <tr class="border-b border-gray-100">
+                                    <td class="py-3 px-1 sm:px-3 font-medium text-gray-700 text-sm">
+                                        <span class="hidden sm:inline">Draw</span><span class="sm:hidden">D</span>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_draw.predicted_home.pct_of_total, false)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_draw.predicted_home.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_draw.predicted_home.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_draw.predicted_draw.pct_of_total, true)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_draw.predicted_draw.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_draw.predicted_draw.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_draw.predicted_away.pct_of_total, false)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_draw.predicted_away.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_draw.predicted_away.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center text-sm font-semibold text-gray-600" x-text="gridData.actual_draw.total.toLocaleString()"></td>
+                                </tr>
+                                <!-- Row: Actual Away -->
+                                <tr class="border-b border-gray-100">
+                                    <td class="py-3 px-1 sm:px-3 font-medium text-gray-700 text-sm">
+                                        <span class="hidden sm:inline">Away</span><span class="sm:hidden">A</span>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_away.predicted_home.pct_of_total, false)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_away.predicted_home.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_away.predicted_home.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_away.predicted_draw.pct_of_total, false)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_away.predicted_draw.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_away.predicted_draw.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center rounded"
+                                        :class="gridCellBg(gridData.actual_away.predicted_away.pct_of_total, true)">
+                                        <div class="text-base sm:text-lg font-bold text-gray-900" x-text="gridData.actual_away.predicted_away.count.toLocaleString()"></div>
+                                        <div class="text-[10px] sm:text-xs text-gray-500" x-text="gridData.actual_away.predicted_away.pct_of_row.toFixed(1) + '%'"></div>
+                                    </td>
+                                    <td class="py-3 px-1 sm:px-3 text-center text-sm font-semibold text-gray-600" x-text="gridData.actual_away.total.toLocaleString()"></td>
+                                </tr>
+                            </tbody>
+                            <tfoot x-show="gridData">
+                                <tr>
+                                    <td colspan="4" class="py-3 px-1 sm:px-3 text-right text-sm font-semibold text-gray-700">
+                                        Total: <span x-text="gridData ? gridData.total.toLocaleString() : ''"></span>
+                                        &middot;
+                                        Accuracy: <span class="text-emerald-600" x-text="gridData ? gridData.accuracy_pct.toFixed(1) + '%' : ''"></span>
+                                        (<span x-text="gridData ? gridData.correct.toLocaleString() : ''"></span> correct)
+                                    </td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    </template>
+                </div>
+
+                <!-- ===== By Source Breakdown ===== -->
+                <template x-if="accuracyDetail && accuracyDetail.by_source">
+                    <div class="mb-6">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-2">By Source</h3>
+                        <div class="flex gap-3">
+                            <template x-for="[src, stats] in Object.entries(accuracyDetail.by_source)" :key="'detail-src-'+src">
+                                <div class="flex items-center gap-1.5 text-sm">
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium"
+                                          :class="src === 'live' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'"
+                                          x-text="src === 'live' ? 'Live' : 'Backfill'"></span>
+                                    <span class="text-gray-500" x-text="stats.count + ' predictions'"></span>
+                                    <span class="font-medium" x-text="'Brier ' + stats.mean_brier_score.toFixed(4)"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- ===== Per-Competition Breakdown ===== -->
+                <template x-if="accuracyDetail && accuracyDetail.per_competition && accuracyDetail.per_competition.length > 0">
+                <div class="mb-6">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-2">Per-Competition Breakdown</h3>
+                    <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                    <th class="py-1.5 pr-2">Competition</th>
+                                    <th class="py-1.5 pr-2 text-right">Predictions</th>
+                                    <th class="py-1.5 text-right">Brier Score</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                <template x-for="comp in accuracyDetail.per_competition" :key="'detail-comp-'+comp.competition">
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="py-1.5 pr-2 text-gray-700" x-text="comp.competition"></td>
+                                        <td class="py-1.5 pr-2 text-right text-gray-500" x-text="comp.count"></td>
+                                        <td class="py-1.5 text-right font-medium" x-text="comp.mean_brier.toFixed(4)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                </template>
+
+                <!-- ===== Calibration Chart ===== -->
+                <div class="mb-6">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Calibration</h3>
+                    <div x-show="!accuracyDetail" class="animate-pulse h-[300px] bg-gray-100 rounded"></div>
+                    <div x-show="accuracyDetail && (!accuracyDetail.calibration || Object.keys(accuracyDetail.calibration).length === 0)"
+                         class="py-6 text-center text-sm text-gray-400">
+                        No calibration data available.
+                    </div>
+                    <div x-show="accuracyDetail && accuracyDetail.calibration && Object.keys(accuracyDetail.calibration).length > 0"
+                         id="calibration-chart" style="min-height: 300px;"></div>
+                </div>
+
+                <!-- ===== Brier Score Trend Chart ===== -->
+                <div class="mb-6">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Brier Score Trend</h3>
+                    <div x-show="!accuracyDetail" class="animate-pulse h-[280px] bg-gray-100 rounded"></div>
+                    <div x-show="accuracyDetail && (!accuracyDetail.time_series || accuracyDetail.time_series.length === 0)"
+                         class="py-6 text-center text-sm text-gray-400">
+                        No time series data available.
+                    </div>
+                    <div x-show="accuracyDetail && accuracyDetail.time_series && accuracyDetail.time_series.length > 0"
+                         id="brier-trend-chart" style="min-height: 280px;"></div>
+                </div>
+
+                <!-- ===== Match Prediction Log (Task 6) ===== -->
+                <div class="mb-2">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Match Prediction Log</h3>
+
+                    <!-- Search bar -->
+                    <div class="relative max-w-sm mb-3">
+                        <input type="text"
+                               x-model="historySearch"
+                               @input="historySearchDebounce()"
+                               placeholder="Search teams..."
+                               class="w-full pl-8 pr-8 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                        <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            </svg>
+                        </div>
+                        <button x-show="historySearch.length > 0"
+                                @click="historySearch = ''; historyPage = 1; fetchHistory()"
+                                class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-gray-400 hover:text-gray-600">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Results count -->
+                    <div x-show="!loadingHistory && historyData.total > 0" class="text-xs text-gray-500 mb-2">
+                        Showing
+                        <span x-text="((historyPage - 1) * historyPerPage) + 1"></span>-<span x-text="Math.min(historyPage * historyPerPage, historyData.total)"></span>
+                        of <span x-text="historyData.total.toLocaleString()"></span> predictions
+                    </div>
+
+                    <!-- Loading -->
+                    <div x-show="loadingHistory" class="animate-pulse space-y-3 py-4">
+                        <template x-for="i in 5" :key="'skel-hist-'+i">
+                            <div class="flex items-center gap-4">
+                                <div class="h-4 w-20 bg-gray-200 rounded"></div>
+                                <div class="h-4 bg-gray-200 rounded flex-1"></div>
+                                <div class="h-4 w-24 bg-gray-200 rounded"></div>
+                                <div class="h-4 w-12 bg-gray-200 rounded"></div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div x-show="!loadingHistory && historyData.items.length === 0"
+                         class="py-8 text-center text-sm text-gray-400">
+                        No predictions found.
+                    </div>
+
+                    <!-- Match table (x-if on data presence only so x-for stays reactive across page changes) -->
+                    <template x-if="historyData.items.length > 0">
+                    <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                        <table class="w-full text-sm min-w-[640px]">
+                            <thead>
+                                <tr class="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                    <th class="py-2 pr-2">Date</th>
+                                    <th class="py-2 pr-2">Match</th>
+                                    <th class="py-2 pr-2 hidden lg:table-cell">Competition</th>
+                                    <th class="py-2 pr-2">Prediction</th>
+                                    <th class="py-2 pr-2 text-center">Result</th>
+                                    <th class="py-2 pr-2 text-right">Brier</th>
+                                    <th class="py-2 text-center">Source</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                <template x-for="(item, i) in historyData.items" :key="i">
+                                    <tr class="hover:bg-gray-50 transition-colors"
+                                        :class="historyIsCorrect(item) ? 'bg-emerald-50/30' : ''">
+                                        <!-- Date -->
+                                        <td class="py-2.5 pr-2 text-gray-500 whitespace-nowrap text-xs" x-text="item.date"></td>
+                                        <!-- Match -->
+                                        <td class="py-2.5 pr-2">
+                                            <div class="text-gray-900 font-medium text-sm" x-text="item.home_team + ' vs ' + item.away_team"></div>
+                                            <div class="text-xs text-gray-400" x-text="item.home_goals + ' - ' + item.away_goals"></div>
+                                        </td>
+                                        <!-- Competition -->
+                                        <td class="py-2.5 pr-2 text-gray-500 text-xs hidden lg:table-cell" x-text="item.competition"></td>
+                                        <!-- Prediction probabilities -->
+                                        <td class="py-2.5 pr-2">
+                                            <div class="flex items-center gap-1 text-xs">
+                                                <!-- Home probability -->
+                                                <span class="px-1.5 py-0.5 rounded font-medium"
+                                                      :class="[
+                                                          item.p_home < 0.15 ? 'bg-emerald-50 text-emerald-800' :
+                                                          item.p_home < 0.30 ? 'bg-emerald-100 text-emerald-800' :
+                                                          item.p_home < 0.55 ? 'bg-emerald-200 text-emerald-800' :
+                                                          item.p_home < 0.75 ? 'bg-emerald-400 text-white' : 'bg-emerald-600 text-white',
+                                                          item.actual_result === 'H' ? 'ring-2 ring-emerald-700' : ''
+                                                      ]"
+                                                      x-text="(item.p_home * 100).toFixed(0) + '%'"></span>
+                                                <!-- Draw probability -->
+                                                <span class="px-1.5 py-0.5 rounded font-medium"
+                                                      :class="[
+                                                          item.p_draw < 0.15 ? 'bg-yellow-50 text-yellow-800' :
+                                                          item.p_draw < 0.30 ? 'bg-yellow-100 text-yellow-800' :
+                                                          item.p_draw < 0.55 ? 'bg-yellow-200 text-yellow-800' :
+                                                          item.p_draw < 0.75 ? 'bg-yellow-400 text-white' : 'bg-yellow-600 text-white',
+                                                          item.actual_result === 'D' ? 'ring-2 ring-yellow-700' : ''
+                                                      ]"
+                                                      x-text="(item.p_draw * 100).toFixed(0) + '%'"></span>
+                                                <!-- Away probability -->
+                                                <span class="px-1.5 py-0.5 rounded font-medium"
+                                                      :class="[
+                                                          item.p_away < 0.15 ? 'bg-blue-50 text-blue-800' :
+                                                          item.p_away < 0.30 ? 'bg-blue-100 text-blue-800' :
+                                                          item.p_away < 0.55 ? 'bg-blue-200 text-blue-800' :
+                                                          item.p_away < 0.75 ? 'bg-blue-400 text-white' : 'bg-blue-600 text-white',
+                                                          item.actual_result === 'A' ? 'ring-2 ring-blue-700' : ''
+                                                      ]"
+                                                      x-text="(item.p_away * 100).toFixed(0) + '%'"></span>
+                                            </div>
+                                        </td>
+                                        <!-- Result badge -->
+                                        <td class="py-2.5 pr-2 text-center">
+                                            <span class="inline-flex items-center justify-center w-7 h-6 rounded text-xs font-bold"
+                                                  :class="{
+                                                      'bg-emerald-100 text-emerald-700': item.actual_result === 'H',
+                                                      'bg-amber-100 text-amber-700': item.actual_result === 'D',
+                                                      'bg-blue-100 text-blue-700': item.actual_result === 'A'
+                                                  }"
+                                                  x-text="item.actual_result"></span>
+                                        </td>
+                                        <!-- Brier score -->
+                                        <td class="py-2.5 pr-2 text-right font-mono text-xs"
+                                            :style="'color:' + brierColor(item.brier_score)"
+                                            x-text="item.brier_score.toFixed(3)"></td>
+                                        <!-- Source badge -->
+                                        <td class="py-2.5 text-center">
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                                                  :class="item.source === 'live' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'"
+                                                  x-text="item.source === 'live' ? 'Live' : 'Backfill'"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    </template>
+
+                    <!-- Pagination -->
+                    <div x-show="!loadingHistory && historyData.pages > 1"
+                         class="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                        <button @click="historyPage--; fetchHistory()"
+                                :disabled="historyPage <= 1"
+                                class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                                :class="historyPage <= 1 ? 'border-gray-200 text-gray-300 cursor-not-allowed' : 'border-gray-300 text-gray-700 hover:bg-gray-50'">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                            </svg>
+                            Prev
+                        </button>
+                        <span class="text-sm text-gray-500">
+                            Page <span x-text="historyPage"></span> of <span x-text="historyData.pages"></span>
+                        </span>
+                        <button @click="historyPage++; fetchHistory()"
+                                :disabled="historyPage >= historyData.pages"
+                                class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                                :class="historyPage >= historyData.pages ? 'border-gray-200 text-gray-300 cursor-not-allowed' : 'border-gray-300 text-gray-700 hover:bg-gray-50'">
+                            Next
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 3: Elo History Chart                                 -->
+    <!-- ============================================================ -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">
+        <div class="px-4 py-3 sm:px-5 sm:py-4">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-lg font-semibold text-gray-900">Elo History</h2>
+            </div>
+
+            <!-- Loading -->
+            <div x-show="loading.chart" class="animate-pulse h-64 bg-gray-100 rounded"></div>
+
+            <!-- Chart container -->
+            <div x-show="!loading.chart" x-cloak>
+                <div x-show="chartData.length === 0"
+                     class="h-64 flex items-center justify-center text-sm text-gray-400">
+                    No rating history available.
+                </div>
+                <div id="elo-chart" class="w-full" style="min-height: 220px;"></div>
+
+                <!-- Team chips + add/remove controls -->
+                <div class="mt-3 pt-3 border-t border-gray-100">
+                    <div class="flex flex-wrap items-center gap-2 mb-2">
+                        <!-- Current teams as removable chips -->
+                        <template x-for="team in chartData" :key="'chip-'+team.team_id">
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700">
+                                <span x-text="team.team"></span>
+                                <button @click="removeChartTeam(team.team_id)"
+                                        class="ml-0.5 text-brand-400 hover:text-brand-700"
+                                        x-show="chartData.length > 1">
+                                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                                    </svg>
+                                </button>
+                            </span>
+                        </template>
+
+                        <!-- Add team button -->
+                        <button @click="showTeamSearch = !showTeamSearch"
+                                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border border-dashed border-gray-300 text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Add team
+                        </button>
+                    </div>
+
+                    <!-- Team search input -->
+                    <div x-show="showTeamSearch" x-cloak class="relative max-w-xs"
+                         @click.away="showTeamSearch = false; teamQuery = ''; teamResults = []">
+                        <input
+                            type="text"
+                            x-model="teamQuery"
+                            x-ref="chartTeamInput"
+                            x-init="$watch('showTeamSearch', v => { if (v) $nextTick(() => $refs.chartTeamInput.focus()) })"
+                            @input.debounce.300ms="
+                                if (teamQuery.length >= 2) {
+                                    fetch('/api/search?q=' + encodeURIComponent(teamQuery) + '&limit=6')
+                                        .then(r => r.json())
+                                        .then(data => { teamResults = data.results || []; })
+                                } else { teamResults = []; }
+                            "
+                            @keydown.escape="showTeamSearch = false; teamQuery = ''; teamResults = []"
+                            placeholder="Search team to add..."
+                            class="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                        />
+                        <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                            <svg class="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            </svg>
+                        </div>
+
+                        <!-- Search results (positioned above input to avoid overflow) -->
+                        <div x-show="teamResults.length > 0"
+                             class="absolute z-50 bottom-full mb-1 w-full bg-white shadow-lg rounded-lg border border-gray-200 overflow-hidden">
+                            <ul class="max-h-48 py-1 text-sm overflow-auto">
+                                <template x-for="result in teamResults" :key="'chart-add-'+result.id">
+                                    <li>
+                                        <button
+                                            @click="addChartTeam(result.id, result.name); teamQuery = ''; teamResults = []; showTeamSearch = false"
+                                            class="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-brand-50 text-left transition-colors"
+                                            :disabled="chartData.some(t => t.team_id === result.id)"
+                                            :class="chartData.some(t => t.team_id === result.id) ? 'opacity-40 cursor-not-allowed' : ''"
+                                        >
+                                            <img src="/static/icons/club.svg" class="w-4 h-4 opacity-40" alt="">
+                                            <span x-text="result.name" class="text-gray-700"></span>
+                                            <span x-show="chartData.some(t => t.team_id === result.id)" class="text-xs text-gray-400 ml-auto">(added)</span>
+                                        </button>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 4: Rankings Table                                    -->
+    <!-- ============================================================ -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 sm:px-5 sm:py-4">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-lg font-semibold text-gray-900">
+                    <span x-text="rankingsTitle()"></span>
+                </h2>
+                <a href="#" @click.prevent="expanded.rankings = !expanded.rankings; computeVisibleRankings()"
+                    x-show="allRankings.length > 5"
+                    class="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors whitespace-nowrap"
+                    x-text="expanded.rankings ? 'Show less' : 'View all'">
+                </a>
+            </div>
+
+            <!-- Loading -->
+            <div x-show="loading.rankings" class="animate-pulse space-y-3">
+                <template x-for="i in 5" :key="'skel-rank-'+i">
+                    <div class="flex items-center gap-4">
+                        <div class="h-4 w-8 bg-gray-200 rounded"></div>
+                        <div class="h-4 bg-gray-200 rounded flex-1"></div>
+                        <div class="h-4 w-16 bg-gray-200 rounded"></div>
+                        <div class="h-4 w-12 bg-gray-200 rounded"></div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Table -->
+            <div x-show="!loading.rankings" x-cloak class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                <div x-show="rankings.length === 0"
+                     class="py-8 text-center text-sm text-gray-400">
+                    No rankings available.
+                </div>
+
+                <table x-show="rankings.length > 0" class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            <th class="py-2 pr-2 w-12">Rank</th>
+                            <th class="py-2 pr-2">Team</th>
+                            <th class="py-2 pr-2 hidden sm:table-cell">League</th>
+                            <th class="py-2 pr-2 text-right">Points</th>
+                            <th class="py-2 text-right w-16 sm:w-20"><span class="hidden sm:inline">Last week</span><span class="sm:hidden">+/-</span></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                        <template x-for="entry in rankings" :key="entry.team_id">
+                            <tr class="hover:bg-gray-50 transition-colors"
+                                :class="{
+                                    'bg-brand-50': teamId && entry.team_id === teamId,
+                                    'bg-gray-50/50': !(teamId && entry.team_id === teamId) && entry.rank % 2 === 0,
+                                    'border-t-4 border-t-gray-200': entry._gapBefore
+                                }">
+                                <td class="py-2.5 pr-2 text-gray-500 font-medium" x-text="entry.rank"></td>
+                                <td class="py-2.5 pr-2">
+                                    <a :href="'/team/' + entry.team_id"
+                                       class="inline-flex items-center gap-2 font-medium text-gray-900 hover:text-brand-600 transition-colors">
+                                        <img src="/static/icons/club.svg" class="w-4 h-4 opacity-40" alt="">
+                                        <span x-text="entry.team"></span>
+                                    </a>
+                                </td>
+                                <td class="py-2.5 pr-2 text-gray-500 hidden sm:table-cell" x-text="entry.country"></td>
+                                <td class="py-2.5 pr-2 text-right font-semibold text-gray-900" x-text="Math.round(entry.rating)"></td>
+                                <td class="py-2.5 text-right">
+                                    <template x-if="entry.change_7d !== null && entry.change_7d > 0">
+                                        <span class="text-emerald-600 font-medium">
+                                            <span class="text-xs">&#9650;</span>
+                                            <span x-text="'+' + Math.round(entry.change_7d)"></span>
+                                        </span>
+                                    </template>
+                                    <template x-if="entry.change_7d !== null && entry.change_7d < 0">
+                                        <span class="text-red-600 font-medium">
+                                            <span class="text-xs">&#9660;</span>
+                                            <span x-text="Math.round(entry.change_7d)"></span>
+                                        </span>
+                                    </template>
+                                    <template x-if="entry.change_7d === null || entry.change_7d === 0">
+                                        <span class="text-gray-300">&ndash;</span>
+                                    </template>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+function eloPage() {
+    return {
+        // Context from template variables
+        level: '{{ level }}',
+        country: '{{ country or "" }}',
+        competition: '{{ competition or "" }}',
+        competitionId: {{ competition_id or 'null' }},
+        teamId: {{ team_id or 'null' }},
+        teamName: '{{ team_name or "" }}',
+
+        // Data
+        fixtures: { finished: [], upcoming: [], hasMoreFinished: false, hasMoreUpcoming: false },
+        accuracy: null,
+        chartData: [],
+        allRankings: [],
+        rankings: [],
+
+        // UI state
+        fixturesOpen: true,
+        loading: { fixtures: true, accuracy: true, chart: true, rankings: true },
+        expanded: { accuracy: false, rankings: false },
+        accuracyDetail: null,
+        accuracyView: 'compact',
+
+        // Accuracy detail state
+        gridData: null,
+        loadingGrid: false,
+        historySearch: '',
+        historyPage: 1,
+        historyPerPage: 20,
+        historyData: { items: [], total: 0, pages: 0 },
+        loadingHistory: false,
+        _historyDebounceTimer: null,
+
+        // Chart team search state (no nested x-data)
+        showTeamSearch: false,
+        teamQuery: '',
+        teamResults: [],
+
+        // Pagination offsets for fixtures
+        fixturesOffsetFinished: 0,
+        fixturesOffsetUpcoming: 0,
+        fixturesLimit: 3,
+
+        // Chart instances
+        chart: null,
+        calibrationChart: null,
+        brierTrendChart: null,
+
+        async init() {
+            await Promise.all([
+                this.fetchFixtures(),
+                this.fetchAccuracy(),
+                this.fetchChart(),
+                this.fetchRankings()
+            ]);
+        },
+
+        buildParams() {
+            const params = new URLSearchParams();
+            if (this.teamId) params.set('team_id', this.teamId);
+            if (this.competition) params.set('competition', this.competition);
+            if (this.country) params.set('country', this.country);
+            return params;
+        },
+
+        // ----- Fetch methods -----
+
+        buildFixtureParams() {
+            const params = new URLSearchParams();
+            if (this.teamId) {
+                // Team context: show fixtures from ALL competitions
+                params.set('team_id', this.teamId);
+            } else if (this.competition) {
+                params.set('competition', this.competition);
+            } else if (this.country) {
+                params.set('country', this.country);
+            }
+            return params;
+        },
+
+        async fetchFixtures() {
+            try {
+                const params = this.buildFixtureParams();
+                params.set('status', 'both');
+                params.set('limit', String(this.fixturesLimit));
+                params.set('offset_finished', String(this.fixturesOffsetFinished));
+                params.set('offset_upcoming', String(this.fixturesOffsetUpcoming));
+                const res = await fetch('/api/fixtures/scoped?' + params.toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    this.fixtures = {
+                        finished: data.finished,
+                        upcoming: data.upcoming,
+                        hasMoreFinished: data.has_more_finished,
+                        hasMoreUpcoming: data.has_more_upcoming
+                    };
+                }
+            } catch (e) {
+                console.error('Failed to fetch fixtures:', e);
+            } finally {
+                this.loading.fixtures = false;
+            }
+        },
+
+        async loadMoreFinished() {
+            try {
+                this.fixturesOffsetFinished += this.fixturesLimit;
+                const params = this.buildFixtureParams();
+                params.set('status', 'finished');
+                params.set('limit', String(this.fixturesLimit));
+                params.set('offset_finished', String(this.fixturesOffsetFinished));
+                const res = await fetch('/api/fixtures/scoped?' + params.toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    // Prepend older matches (they come reversed = chronological)
+                    this.fixtures.finished = [...data.finished, ...this.fixtures.finished];
+                    this.fixtures.hasMoreFinished = data.has_more_finished;
+                }
+            } catch (e) {
+                console.error('Failed to load more finished:', e);
+            }
+        },
+
+        async loadMoreUpcoming() {
+            try {
+                this.fixturesOffsetUpcoming += this.fixturesLimit;
+                const params = this.buildFixtureParams();
+                params.set('status', 'scheduled');
+                params.set('limit', String(this.fixturesLimit));
+                params.set('offset_upcoming', String(this.fixturesOffsetUpcoming));
+                const res = await fetch('/api/fixtures/scoped?' + params.toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    // Append newer upcoming
+                    this.fixtures.upcoming = [...this.fixtures.upcoming, ...data.upcoming];
+                    this.fixtures.hasMoreUpcoming = data.has_more_upcoming;
+                }
+            } catch (e) {
+                console.error('Failed to load more upcoming:', e);
+            }
+        },
+
+        async fetchAccuracy() {
+            try {
+                const params = this.buildParams();
+                const res = await fetch('/api/accuracy/scoped?' + params.toString());
+                if (res.ok) {
+                    this.accuracy = await res.json();
+                }
+            } catch (e) {
+                console.error('Failed to fetch accuracy:', e);
+            } finally {
+                this.loading.accuracy = false;
+            }
+        },
+
+        async fetchAccuracyExpanded() {
+            if (this.accuracyDetail) return;
+            try {
+                const params = this.buildParams();
+                const res = await fetch('/api/prediction-accuracy?' + params.toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    // Transform by_competition dict to per_competition array
+                    data.per_competition = Object.entries(data.by_competition || {}).map(
+                        ([name, stats]) => ({ competition: name, count: stats.count, mean_brier: stats.mean_brier_score })
+                    ).sort((a, b) => a.mean_brier - b.mean_brier);
+                    this.accuracyDetail = data;
+                }
+            } catch (e) {
+                console.error('Failed to fetch accuracy details:', e);
+            }
+        },
+
+        async openAccuracyDetail() {
+            this.accuracyView = 'detail';
+            // Fetch grid, history, and expanded detail in parallel
+            await Promise.all([
+                this.fetchGrid(),
+                this.fetchHistory(),
+                this.fetchAccuracyExpanded()
+            ]);
+            // Render accuracy charts after data is loaded
+            this.$nextTick(() => {
+                this.renderCalibrationChart();
+                this.renderBrierTrendChart();
+            });
+        },
+
+        async fetchGrid() {
+            this.loadingGrid = true;
+            try {
+                const params = this.buildParams();
+                const res = await fetch('/api/accuracy/grid?' + params.toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    this.gridData = data.total > 0 ? data : null;
+                }
+            } catch (e) {
+                console.error('Failed to fetch accuracy grid:', e);
+            } finally {
+                this.loadingGrid = false;
+            }
+        },
+
+        async fetchHistory() {
+            this.loadingHistory = true;
+            try {
+                const params = this.buildParams();
+                params.set('page', String(this.historyPage));
+                params.set('per_page', String(this.historyPerPage));
+                if (this.historySearch.trim()) {
+                    params.set('search', this.historySearch.trim());
+                }
+                const res = await fetch('/api/prediction-history?' + params.toString());
+                if (res.ok) {
+                    this.historyData = await res.json();
+                }
+            } catch (e) {
+                console.error('Failed to fetch prediction history:', e);
+            } finally {
+                this.loadingHistory = false;
+            }
+        },
+
+        historySearchDebounce() {
+            clearTimeout(this._historyDebounceTimer);
+            this._historyDebounceTimer = setTimeout(() => {
+                this.historyPage = 1;
+                this.fetchHistory();
+            }, 300);
+        },
+
+        historyPredicted(item) {
+            const max = Math.max(item.p_home, item.p_draw, item.p_away);
+            if (max === item.p_home) return 'H';
+            if (max === item.p_away) return 'A';
+            return 'D';
+        },
+
+        historyIsCorrect(item) {
+            return this.historyPredicted(item) === item.actual_result;
+        },
+
+        gridCellBg(pctOfTotal, isDiagonal) {
+            if (isDiagonal) {
+                if (pctOfTotal > 20) return 'bg-green-100';
+                if (pctOfTotal > 10) return 'bg-green-50';
+                return 'bg-green-50/50';
+            }
+            if (pctOfTotal > 15) return 'bg-gray-100';
+            if (pctOfTotal > 5) return 'bg-gray-50';
+            return '';
+        },
+
+        brierColor(score) {
+            // Green (good, near 0) -> amber -> red (bad, near 1+)
+            const clamped = Math.min(Math.max(score, 0), 1.2);
+            const ratio = clamped / 1.2;
+            if (ratio < 0.5) {
+                // green to amber
+                const r = Math.round(34 + (ratio * 2) * (217 - 34));
+                const g = Math.round(197 + (ratio * 2) * (119 - 197));
+                const b = Math.round(94 + (ratio * 2) * (6 - 94));
+                return `rgb(${r},${g},${b})`;
+            }
+            // amber to red
+            const t = (ratio - 0.5) * 2;
+            const r = Math.round(217 + t * (220 - 217));
+            const g = Math.round(119 - t * 119);
+            const b = Math.round(6 - t * 6);
+            return `rgb(${r},${g},${b})`;
+        },
+
+        destroyAccuracyCharts() {
+            if (this.calibrationChart) { this.calibrationChart.destroy(); this.calibrationChart = null; }
+            if (this.brierTrendChart) { this.brierTrendChart.destroy(); this.brierTrendChart = null; }
+        },
+
+        renderCalibrationChart() {
+            const detail = this.accuracyDetail;
+            if (!detail || !detail.calibration || Object.keys(detail.calibration).length === 0) return;
+
+            const el = document.querySelector('#calibration-chart');
+            if (!el) return;
+
+            if (this.calibrationChart) {
+                this.calibrationChart.destroy();
+                this.calibrationChart = null;
+            }
+            el.innerHTML = '';
+
+            const bucketKeys = Object.keys(detail.calibration);
+            const actualFreqs = bucketKeys.map(k => {
+                const v = detail.calibration[k];
+                return v.actual_frequency !== null ? Math.round(v.actual_frequency * 100 * 100) / 100 : 0;
+            });
+            const expectedMidpoints = bucketKeys.map(k => {
+                return Math.round(detail.calibration[k].expected_midpoint * 100 * 100) / 100;
+            });
+            const counts = bucketKeys.map(k => detail.calibration[k].count);
+
+            const options = {
+                chart: {
+                    type: 'line',
+                    height: 300,
+                    fontFamily: 'inherit',
+                    toolbar: { show: false },
+                    animations: { enabled: true, easing: 'easeinout', speed: 400 }
+                },
+                series: [
+                    {
+                        name: 'Actual frequency',
+                        type: 'bar',
+                        data: actualFreqs
+                    },
+                    {
+                        name: 'Perfect calibration',
+                        type: 'line',
+                        data: expectedMidpoints
+                    }
+                ],
+                colors: ['#14b8a6', '#9ca3af'],
+                stroke: {
+                    width: [0, 2.5],
+                    dashArray: [0, 6],
+                    curve: 'straight'
+                },
+                plotOptions: {
+                    bar: {
+                        columnWidth: '55%',
+                        borderRadius: 3
+                    }
+                },
+                fill: {
+                    opacity: [0.9, 1]
+                },
+                xaxis: {
+                    categories: bucketKeys,
+                    labels: {
+                        style: { fontSize: '11px', colors: '#9ca3af' },
+                        rotate: -45,
+                        rotateAlways: false
+                    },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false }
+                },
+                yaxis: {
+                    min: 0,
+                    max: 100,
+                    labels: {
+                        style: { fontSize: '11px', colors: '#9ca3af' },
+                        formatter: val => val.toFixed(0) + '%'
+                    },
+                    title: { text: 'Frequency (%)', style: { fontSize: '12px', color: '#9ca3af', fontWeight: 400 } }
+                },
+                grid: {
+                    borderColor: '#f3f4f6',
+                    strokeDashArray: 3,
+                    xaxis: { lines: { show: false } }
+                },
+                legend: {
+                    position: 'top',
+                    horizontalAlign: 'right',
+                    fontSize: '12px',
+                    markers: { size: 4 },
+                    itemMargin: { horizontal: 10 }
+                },
+                tooltip: {
+                    shared: true,
+                    intersect: false,
+                    custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                        const bucket = bucketKeys[dataPointIndex];
+                        const actual = actualFreqs[dataPointIndex];
+                        const expected = expectedMidpoints[dataPointIndex];
+                        const count = counts[dataPointIndex];
+                        return '<div class="px-3 py-2 text-sm">' +
+                            '<div class="font-semibold text-gray-900 mb-1">' + bucket + '</div>' +
+                            '<div class="text-gray-600">Predicted midpoint: <span class="font-medium">' + expected.toFixed(1) + '%</span></div>' +
+                            '<div class="text-gray-600">Actual frequency: <span class="font-medium">' + actual.toFixed(1) + '%</span></div>' +
+                            '<div class="text-gray-400 text-xs mt-0.5">' + count.toLocaleString() + ' samples</div>' +
+                            '</div>';
+                    }
+                },
+                dataLabels: { enabled: false }
+            };
+
+            this.calibrationChart = new ApexCharts(el, options);
+            this.calibrationChart.render();
+        },
+
+        renderBrierTrendChart() {
+            const detail = this.accuracyDetail;
+            if (!detail || !detail.time_series || detail.time_series.length === 0) return;
+
+            const el = document.querySelector('#brier-trend-chart');
+            if (!el) return;
+
+            if (this.brierTrendChart) {
+                this.brierTrendChart.destroy();
+                this.brierTrendChart = null;
+            }
+            el.innerHTML = '';
+
+            const seriesData = detail.time_series.map(pt => ({
+                x: new Date(pt.date).getTime(),
+                y: pt.rolling_brier
+            }));
+
+            const meanBrier = detail.mean_brier_score;
+
+            const options = {
+                chart: {
+                    type: 'area',
+                    height: 280,
+                    fontFamily: 'inherit',
+                    toolbar: {
+                        show: true,
+                        tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true }
+                    },
+                    zoom: { enabled: true },
+                    animations: { enabled: true, easing: 'easeinout', speed: 400 }
+                },
+                series: [{
+                    name: 'Rolling Brier Score',
+                    data: seriesData
+                }],
+                colors: ['#14b8a6'],
+                stroke: {
+                    curve: 'smooth',
+                    width: 2
+                },
+                fill: {
+                    type: 'gradient',
+                    gradient: {
+                        shadeIntensity: 1,
+                        opacityFrom: 0.45,
+                        opacityTo: 0.05,
+                        stops: [0, 100]
+                    }
+                },
+                xaxis: {
+                    type: 'datetime',
+                    labels: {
+                        style: { fontSize: '11px', colors: '#9ca3af' },
+                        datetimeFormatter: { year: 'yyyy', month: "MMM ''yy" }
+                    },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false }
+                },
+                yaxis: {
+                    labels: {
+                        style: { fontSize: '11px', colors: '#9ca3af' },
+                        formatter: val => val.toFixed(3)
+                    },
+                    title: { text: 'Brier Score (lower is better)', style: { fontSize: '12px', color: '#9ca3af', fontWeight: 400 } }
+                },
+                grid: {
+                    borderColor: '#f3f4f6',
+                    strokeDashArray: 3,
+                    xaxis: { lines: { show: false } }
+                },
+                annotations: meanBrier !== null ? {
+                    yaxis: [{
+                        y: meanBrier,
+                        borderColor: '#6b7280',
+                        strokeDashArray: 4,
+                        label: {
+                            text: 'Mean ' + meanBrier.toFixed(4),
+                            position: 'left',
+                            borderColor: '#6b7280',
+                            style: {
+                                color: '#fff',
+                                background: '#6b7280',
+                                fontSize: '11px',
+                                padding: { left: 6, right: 6, top: 2, bottom: 2 }
+                            }
+                        }
+                    }]
+                } : {},
+                tooltip: {
+                    x: { format: 'dd MMM yyyy' },
+                    y: { formatter: val => val.toFixed(4) }
+                },
+                legend: { show: false },
+                dataLabels: { enabled: false }
+            };
+
+            this.brierTrendChart = new ApexCharts(el, options);
+            this.brierTrendChart.render();
+        },
+
+        async fetchChart() {
+            this.loading.chart = true;
+            try {
+                const params = this.buildParams();
+                const res = await fetch('/api/chart/scoped?' + params.toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    this.chartData = data.teams || [];
+                    this.$nextTick(() => this.renderChart());
+                }
+            } catch (e) {
+                console.error('Failed to fetch chart:', e);
+            } finally {
+                this.loading.chart = false;
+            }
+        },
+
+        async fetchRankings() {
+            try {
+                const params = new URLSearchParams();
+                if (this.country) params.set('country', this.country);
+                if (this.competition) params.set('league', this.competition);
+                const res = await fetch('/api/rankings?' + params.toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    this.allRankings = data.rankings || [];
+                    this.computeVisibleRankings();
+                }
+            } catch (e) {
+                console.error('Failed to fetch rankings:', e);
+            } finally {
+                this.loading.rankings = false;
+            }
+        },
+
+        computeVisibleRankings() {
+            const all = this.allRankings;
+            if (this.expanded.rankings || all.length <= 5) {
+                this.rankings = all.map(r => ({...r, _gapBefore: false}));
+                return;
+            }
+
+            // Top 5
+            let visible = all.slice(0, 5).map(r => ({...r, _gapBefore: false}));
+
+            // If team context, add selected team ±3
+            if (this.teamId) {
+                const teamIdx = all.findIndex(r => r.team_id === this.teamId);
+                if (teamIdx >= 5) {
+                    const start = Math.max(5, teamIdx - 3);
+                    const end = Math.min(all.length, teamIdx + 4);
+                    for (let i = start; i < end; i++) {
+                        visible.push({...all[i], _gapBefore: (i === start)});
+                    }
+                }
+            }
+
+            this.rankings = visible;
+        },
+
+        // ----- Chart rendering -----
+
+        renderChart() {
+            if (this.chartData.length === 0) return;
+
+            const el = document.querySelector('#elo-chart');
+            if (!el) return;
+
+            if (this.chart) {
+                this.chart.destroy();
+                this.chart = null;
+            }
+            el.innerHTML = '';
+
+            const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+                             '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6'];
+
+            const series = this.chartData.map((team, idx) => ({
+                name: team.team,
+                data: team.history.map(pt => ({
+                    x: new Date(pt.date).getTime(),
+                    y: Math.round(pt.rating)
+                }))
+            }));
+
+            const chartHeight = window.innerWidth < 640 ? 220 : 280;
+
+            const options = {
+                chart: {
+                    type: 'line',
+                    height: chartHeight,
+                    fontFamily: 'inherit',
+                    toolbar: {
+                        show: true,
+                        tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true }
+                    },
+                    zoom: { enabled: true },
+                    animations: { enabled: true, easing: 'easeinout', speed: 600 }
+                },
+                series: series,
+                colors: colors.slice(0, series.length),
+                stroke: {
+                    curve: 'smooth',
+                    width: 2.5
+                },
+                xaxis: {
+                    type: 'datetime',
+                    labels: {
+                        style: { fontSize: '11px', colors: '#9ca3af' },
+                        datetimeFormatter: { year: 'yyyy', month: "MMM ''yy" }
+                    },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false }
+                },
+                yaxis: {
+                    labels: {
+                        style: { fontSize: '11px', colors: '#9ca3af' },
+                        formatter: val => Math.round(val)
+                    }
+                },
+                grid: {
+                    borderColor: '#f3f4f6',
+                    strokeDashArray: 3,
+                    xaxis: { lines: { show: false } }
+                },
+                legend: {
+                    position: 'top',
+                    horizontalAlign: 'left',
+                    fontSize: '12px',
+                    markers: { size: 4 },
+                    itemMargin: { horizontal: 12 }
+                },
+                tooltip: {
+                    x: { format: 'dd MMM yyyy' },
+                    y: { formatter: val => val + ' Elo' }
+                },
+                dataLabels: { enabled: false }
+            };
+
+            this.chart = new ApexCharts(el, options);
+            this.chart.render();
+        },
+
+        // ----- Chart team management -----
+
+        async addChartTeam(teamId, teamName) {
+            if (this.chartData.some(t => t.team_id === teamId)) return;
+            try {
+                const params = new URLSearchParams();
+                params.set('team_id', teamId);
+                const res = await fetch('/api/chart/scoped?' + params.toString());
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.teams && data.teams.length > 0) {
+                        this.chartData = [...this.chartData, data.teams[0]];
+                        this.updateChartSeries();
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to add team to chart:', e);
+            }
+        },
+
+        removeChartTeam(teamId) {
+            this.chartData = this.chartData.filter(t => t.team_id !== teamId);
+            if (this.chartData.length === 0) {
+                if (this.chart) { this.chart.destroy(); this.chart = null; }
+                return;
+            }
+            this.updateChartSeries();
+        },
+
+        updateChartSeries() {
+            const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+                             '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6'];
+            const series = this.chartData.map(team => ({
+                name: team.team,
+                data: team.history.map(pt => ({
+                    x: new Date(pt.date).getTime(),
+                    y: Math.round(pt.rating)
+                }))
+            }));
+            if (this.chart) {
+                this.chart.updateOptions({
+                    series: series,
+                    colors: colors.slice(0, series.length)
+                }, false, true);
+            } else {
+                this.renderChart();
+            }
+        },
+
+        // ----- Helpers -----
+
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr + 'T12:00:00');
+            return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        },
+
+        competitionIcon(competition) {
+            const cups = ['Champions League', 'Europa League', 'Conference League', 'FA Cup', 'Copa del Rey', 'DFB-Pokal', 'Coppa Italia', 'Coupe de France'];
+            if (cups.some(c => competition && competition.includes(c))) {
+                return '/static/icons/cup.svg';
+            }
+            return '/static/icons/league.svg';
+        },
+
+        teamUrl(team) {
+            return '/team/' + team.id;
+        },
+
+        rankingsTitle() {
+            if (this.level === 'team') return 'League Ranking';
+            if (this.level === 'league') return this.competition + ' Ranking';
+            if (this.level === 'nation') return this.country + ' Ranking';
+            return 'Global Ranking';
+        }
+    };
+}
+</script>
+{% endblock %}

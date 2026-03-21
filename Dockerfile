@@ -22,6 +22,7 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy application code
 COPY src/ src/
 COPY backend/ backend/
+COPY scripts/ scripts/
 COPY pyproject.toml ./
 
 # Ensure venv is on PATH

@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     away_elo REAL NOT NULL,
     brier_score REAL,
     scored_at TEXT,
+    source TEXT NOT NULL DEFAULT 'live',
     CHECK (
         (match_id IS NOT NULL AND fixture_id IS NULL) OR
         (match_id IS NULL AND fixture_id IS NOT NULL)

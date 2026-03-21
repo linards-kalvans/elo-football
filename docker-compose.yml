@@ -7,6 +7,7 @@ services:
       - ./data:/app/data
     environment:
       - ELO_DB_PATH=/app/data/elo.db
+      - FOOTBALL_DATA_API_KEY=${FOOTBALL_DATA_API_KEY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -14,3 +15,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  cron:
+    build: .
+    volumes:
+      - ./data:/app/data
+    environment:
+      - FOOTBALL_DATA_API_KEY=${FOOTBALL_DATA_API_KEY}
+      - ELO_DB_PATH=/app/data/elo.db
+    restart: unless-stopped
+    command: ["python", "scripts/cron_runner.py"]

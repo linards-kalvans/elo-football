@@ -331,13 +331,16 @@ def update_fixture_status(conn: sqlite3.Connection, fixture_id: int,
 def insert_prediction(conn: sqlite3.Connection, p_home: float, p_draw: float,
                       p_away: float, home_elo: float, away_elo: float,
                       match_id: int | None = None,
-                      fixture_id: int | None = None) -> int:
+                      fixture_id: int | None = None,
+                      source: str = "live") -> int:
     """Insert a prediction. Exactly one of match_id/fixture_id must be set."""
     cur = conn.execute(
         """INSERT INTO predictions
-           (match_id, fixture_id, p_home, p_draw, p_away, home_elo, away_elo)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (match_id, fixture_id, p_home, p_draw, p_away, home_elo, away_elo),
+           (match_id, fixture_id, p_home, p_draw, p_away, home_elo, away_elo,
+            source)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (match_id, fixture_id, p_home, p_draw, p_away, home_elo, away_elo,
+         source),
     )
     return cur.lastrowid
 

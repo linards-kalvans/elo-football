@@ -8,10 +8,13 @@ Free tier limit: 10 requests/minute.
 """
 
 import asyncio
+import logging
 import os
 import time
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +153,25 @@ class FootballDataClient:
             if response.status_code == 200:
                 return response.json()
 
-            if response.status_code in (401, 403):
+            if response.status_code == 401:
                 raise AuthError(response.text)
+
+            if response.status_code == 403:
+                _403_delays = [10, 60, 120]
+                if attempt < MAX_RETRIES - 1:
+                    wait = _403_delays[min(attempt, len(_403_delays) - 1)]
+                    logger.warning(
+                        "HTTP 403 on attempt %d/%d, retrying in %ds...",
+                        attempt + 1,
+                        MAX_RETRIES,
+                        wait,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise AuthError(
+                    f"Persistent HTTP 403 after {MAX_RETRIES} attempts: "
+                    f"{response.text}"
+                )
 
             if response.status_code == 429:
                 if attempt < MAX_RETRIES - 1:
