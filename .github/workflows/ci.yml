@@ -71,10 +71,10 @@ jobs:
             docker compose up --build -d
 
             # 3. Run schema migrations (safe to run multiple times)
-            docker compose exec app uv run python -c "import asyncio; from src.db.migrate import run_migrations; asyncio.run(run_migrations())"
+            docker compose exec app python -c "import asyncio; from src.db.migrate import run_migrations; asyncio.run(run_migrations())"
 
             # 4. Incremental data update (appends new matches, recomputes ratings)
-            docker compose exec app uv run python -c "from src.pipeline import run_incremental_update; run_incremental_update()"
+            docker compose exec app python -c "from src.pipeline import run_incremental_update; run_incremental_update()"
 
             # 5. Health check — retry up to 5 times with 3s delay
             for i in 1 2 3 4 5; do
