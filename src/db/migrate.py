@@ -12,6 +12,7 @@ Usage:
 """
 
 import asyncio
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -154,8 +155,18 @@ async def run_migrations(
             # executescript handles multi-statement SQL including triggers
             # (which contain semicolons inside BEGIN...END blocks).
             # It implicitly commits any open transaction before running.
-            await conn.executescript(sql)
-            await conn.commit()
+            try:
+                await conn.executescript(sql)
+                await conn.commit()
+            except sqlite3.OperationalError as e:
+                # Tolerate "duplicate column name" — means the column was
+                # already added outside the migration runner (e.g. by a
+                # partially-applied migration where executescript committed
+                # but the schema_migrations INSERT failed).
+                if "duplicate column name" not in str(e):
+                    raise
+                if verbose:
+                    print(f"    Warning: {e} — column already exists, marking migration as applied.")
 
             await conn.execute(
                 "INSERT INTO schema_migrations (version, filename) VALUES (?, ?)",
