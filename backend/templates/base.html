@@ -43,11 +43,14 @@
         }
     </script>
 </head>
-<body class="h-full bg-gray-50 overflow-x-hidden" x-data="elokit()" x-init="init()">
-    <div class="min-h-full flex flex-col">
+<body class="h-full overflow-hidden bg-gray-50" x-data="elokit()" x-init="init()">
+    <div class="h-full flex flex-col">
+
+        <!-- Header + Breadcrumb (sticky wrapper) -->
+        <div class="sticky top-0 z-30">
 
         <!-- Header -->
-        <header class="bg-white border-b border-gray-200 shadow-sm relative z-30">
+        <header class="bg-white border-b border-gray-200 shadow-sm">
             <div class="flex items-center justify-between px-4 py-3 lg:px-6">
                 <!-- Left: hamburger + logo -->
                 <div class="flex items-center gap-3">
@@ -195,8 +198,16 @@
                     <span class="font-medium text-gray-900">{{ team_name }}</span>
                 </li>
                 {% endif %}
+                {% if level == 'about' %}
+                <li class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-gray-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+                    <span class="font-medium text-gray-900">About</span>
+                </li>
+                {% endif %}
             </ol>
         </nav>
+
+        </div><!-- end sticky wrapper -->
 
         <!-- Layout: sidebar + main -->
         <div class="flex flex-1 overflow-hidden">
@@ -314,20 +325,19 @@
                 <div class="max-w-6xl mx-auto px-3 py-4 sm:px-4 sm:py-6 lg:px-8">
                     {% block content %}{% endblock %}
                 </div>
+                <!-- Footer -->
+                <footer class="bg-white border-t border-gray-200 mt-auto">
+                    <div class="max-w-6xl mx-auto py-5 px-4 lg:px-8">
+                        <p class="text-center text-xs text-gray-400">
+                            Data sources:
+                            <a href="https://www.football-data.co.uk" class="text-brand-500 hover:text-brand-600">Football-Data.co.uk</a>
+                            &amp;
+                            <a href="https://github.com/openfootball" class="text-brand-500 hover:text-brand-600">openfootball</a>
+                        </p>
+                    </div>
+                </footer>
             </main>
         </div>
-
-        <!-- Footer -->
-        <footer class="bg-white border-t border-gray-200">
-            <div class="max-w-6xl mx-auto py-5 px-4 lg:px-8">
-                <p class="text-center text-xs text-gray-400">
-                    Data sources:
-                    <a href="https://www.football-data.co.uk" class="text-brand-500 hover:text-brand-600">Football-Data.co.uk</a>
-                    &amp;
-                    <a href="https://github.com/openfootball" class="text-brand-500 hover:text-brand-600">openfootball</a>
-                </p>
-            </div>
-        </footer>
     </div>
 
     <script>

@@ -62,6 +62,7 @@ from backend.slugs import (
 )
 from src.config import EloSettings
 from src.db.connection import get_async_connection, get_db_path
+from src.db.migrate import run_migrations
 from src.prediction import predict_match
 
 # Cache for sidebar data (changes rarely)
@@ -75,12 +76,12 @@ _settings = EloSettings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle (startup/shutdown)."""
-    # Startup: verify database exists
+    # Startup: ensure data directory and schema exist
     db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     if not db_path.exists():
-        raise RuntimeError(
-            f"Database not found at {db_path}. Run pipeline first: uv run python -c 'from src.pipeline import run_pipeline; run_pipeline()'"
-        )
+        print(f"Database not found at {db_path}. Creating empty database and applying migrations.")
+    await run_migrations(db_path=db_path, verbose=True)
 
     # Build slug lookup cache for URL path resolution
     await build_slug_cache()
@@ -1935,8 +1936,9 @@ async def get_sidebar():
             )
 
             if comp_tier < 5 or not comp_country:
-                # European competition
-                european.append(entry)
+                # European competition — exclude EL/Conference League (no live data)
+                if comp_name not in ("Europa League", "Conference League"):
+                    european.append(entry)
             else:
                 # Domestic competition
                 if comp_country not in nations_map:
@@ -2073,6 +2075,15 @@ async def prediction_history(
         raise HTTPException(
             status_code=500, detail=f"Error fetching prediction history: {str(e)}"
         )
+
+
+# --- Static Pages ---
+
+
+@app.get("/about", response_class=HTMLResponse, tags=["Frontend"])
+async def about_page(request: Request) -> HTMLResponse:
+    """Render the About page with project info and planned milestones."""
+    return templates.TemplateResponse(request, "about.html", {"level": "about"})
 
 
 # --- Catch-All Route (must be registered LAST) ---

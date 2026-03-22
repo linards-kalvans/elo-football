@@ -151,7 +151,11 @@ async def run_migrations(
                 print(f"  Applying {filename}...")
 
             sql = path.read_text()
+            # executescript handles multi-statement SQL including triggers
+            # (which contain semicolons inside BEGIN...END blocks).
+            # It implicitly commits any open transaction before running.
             await conn.executescript(sql)
+            await conn.commit()
 
             await conn.execute(
                 "INSERT INTO schema_migrations (version, filename) VALUES (?, ?)",

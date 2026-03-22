@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}About — EloKit{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+
+    <!-- Page heading -->
+    <div class="mb-8">
+        <h1 class="text-2xl font-bold text-gray-900 mb-2">About EloKit</h1>
+        <p class="text-gray-500 text-sm">Football Elo Rating System for European club football</p>
+    </div>
+
+    <!-- What is EloKit -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">What is EloKit?</h2>
+        <p class="text-gray-600 text-sm leading-relaxed mb-3">
+            EloKit is a football analytics platform that applies the
+            <a href="https://en.wikipedia.org/wiki/Elo_rating_system" target="_blank" rel="noopener" class="text-brand-600 hover:text-brand-700 underline underline-offset-2">Elo rating system</a>
+            to European club football. Originally developed for chess, the Elo model provides a principled
+            way to measure team strength and predict match outcomes.
+        </p>
+        <p class="text-gray-600 text-sm leading-relaxed">
+            Ratings are computed across <strong>325 clubs</strong> in 5 domestic leagues plus the Champions League,
+            Europa League, and Conference League — covering <strong>32k+ matches</strong> from 2010 to present.
+            The 2010–2016 seasons serve as a warm-up calibration period; ratings displayed on the site start
+            from August 2016.
+        </p>
+    </div>
+
+    <!-- How it works -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">How ratings work</h2>
+        <ul class="space-y-2 text-sm text-gray-600">
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-brand-400 shrink-0"></span>
+                <span><strong>Home advantage</strong> — a fixed bonus added to the home team's expected score (default: 55 Elo points).</span>
+            </li>
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-brand-400 shrink-0"></span>
+                <span><strong>Margin of victory</strong> — the K-factor is scaled using the FiveThirtyEight log-goal formula so heavy wins count more.</span>
+            </li>
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-brand-400 shrink-0"></span>
+                <span><strong>Competition weighting</strong> — Champions League knockout matches carry a higher K multiplier (T1 = 1.5×) than domestic fixtures (baseline 1.0×).</span>
+            </li>
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-brand-400 shrink-0"></span>
+                <span><strong>Time decay</strong> — ratings drift slowly toward the mean between seasons (DR = 0.90), preventing stale dominance.</span>
+            </li>
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-brand-400 shrink-0"></span>
+                <span><strong>Promoted teams</strong> — newly promoted sides start at a fixed initialisation rating (PE = 1400).</span>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Prediction accuracy -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Prediction accuracy</h2>
+        <p class="text-gray-600 text-sm leading-relaxed mb-3">
+            Every upcoming fixture gets a pre-match win-probability estimate. Once a match is played the
+            prediction is scored using the <strong>Brier score</strong> (lower = better calibration).
+            EloKit currently tracks over <strong>20,000 historical predictions</strong> with a mean Brier
+            score of <strong>0.586</strong>, in line with naive baselines for three-outcome football
+            prediction.
+        </p>
+        <p class="text-gray-600 text-sm leading-relaxed">
+            Prediction accuracy detail — including a 3×3 confusion matrix, calibration chart, and
+            Brier score trend — is available in the <a href="/" class="text-brand-600 hover:text-brand-700 underline underline-offset-2">Accuracy</a> section of each league or team view.
+        </p>
+    </div>
+
+    <!-- Leagues covered -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Coverage</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+            <div class="flex items-center gap-3">
+                <img src="/static/flags/england.svg" class="w-6 h-4 rounded-sm object-cover" alt="England" onerror="this.style.display='none'">
+                <span>Premier League (England)</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <img src="/static/flags/spain.svg" class="w-6 h-4 rounded-sm object-cover" alt="Spain" onerror="this.style.display='none'">
+                <span>La Liga (Spain)</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <img src="/static/flags/germany.svg" class="w-6 h-4 rounded-sm object-cover" alt="Germany" onerror="this.style.display='none'">
+                <span>Bundesliga (Germany)</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <img src="/static/flags/italy.svg" class="w-6 h-4 rounded-sm object-cover" alt="Italy" onerror="this.style.display='none'">
+                <span>Serie A (Italy)</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <img src="/static/flags/france.svg" class="w-6 h-4 rounded-sm object-cover" alt="France" onerror="this.style.display='none'">
+                <span>Ligue 1 (France)</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <img src="/static/logos/competitions/cl.svg" class="w-5 h-5 shrink-0" alt="Champions League" onerror="this.style.display='none'">
+                <span>UEFA Champions League</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Planned milestones -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Roadmap</h2>
+        <div class="space-y-3">
+
+            <!-- Completed -->
+            <div>
+                <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Completed (Sprints 1–15.1)</h3>
+                <ul class="space-y-1.5 text-sm text-gray-600">
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Elo engine with home advantage, MoV scaling, time decay, competition tiers</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> 5 domestic leagues + CL / EL / Conference League (31,789 matches)</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> 2010–2016 warm-up calibration period</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> SQLite persistence with schema migrations</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> FastAPI backend with 17 REST endpoints + OpenAPI docs</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Live data via football-data.org API (daily cron)</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Unified EloKit frontend (Alpine.js + ApexCharts + Tailwind)</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Prediction tracking: 20,000+ historical predictions, Brier score, calibration chart</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Nation flags &amp; competition logos</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Detailed prediction accuracy view (3×3 confusion matrix, match log, Brier trend)</li>
+                    <li class="flex items-center gap-2"><span class="text-green-500">✓</span> Docker + CI/CD deployment on VPS</li>
+                </ul>
+            </div>
+
+            <!-- Planned -->
+            <div class="pt-2 border-t border-gray-100">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Planned</h3>
+                <ul class="space-y-1.5 text-sm text-gray-600">
+                    <li class="flex items-center gap-2"><span class="text-gray-400">○</span> More leagues (Eredivisie, Primeira Liga, etc.)</li>
+                    <li class="flex items-center gap-2"><span class="text-gray-400">○</span> Two-leg tie aggregation for knockout rounds</li>
+                    <li class="flex items-center gap-2"><span class="text-gray-400">○</span> xG-adjusted Elo variant</li>
+                    <li class="flex items-center gap-2"><span class="text-gray-400">○</span> Public API with rate limiting</li>
+                    <!-- <li class="flex items-center gap-2"><span class="text-gray-400">○</span> Mobile app</li> -->
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data sources -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Data sources</h2>
+        <ul class="space-y-2 text-sm text-gray-600">
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0"></span>
+                <span>
+                    <a href="https://www.football-data.co.uk" target="_blank" rel="noopener" class="text-brand-600 hover:text-brand-700 underline underline-offset-2">Football-Data.co.uk</a>
+                    — domestic league CSVs (2010–present)
+                </span>
+            </li>
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0"></span>
+                <span>
+                    <a href="https://github.com/openfootball" target="_blank" rel="noopener" class="text-brand-600 hover:text-brand-700 underline underline-offset-2">openfootball</a>
+                    — CL / EL / Conference League historical data
+                </span>
+            </li>
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0"></span>
+                <span>
+                    <a href="https://www.football-data.org" target="_blank" rel="noopener" class="text-brand-600 hover:text-brand-700 underline underline-offset-2">football-data.org</a>
+                    — live fixtures and results (daily update)
+                </span>
+            </li>
+        </ul>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-3">Github</h2>
+        <ul class="space-y-2 text-sm text-gray-600">
+            <li class="flex items-start gap-2">
+                <span class="mt-1 w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0"></span>
+                <span>
+                    <a href="https://github.com/linards-kalvans/elo-football" target="_blank" rel="noopener" class="text-brand-600 hover:text-brand-700 underline underline-offset-2">Football-Data.co.uk</a>
+                    — linards-kalvans/elo-football
+                </span>
+            </li>
+        </ul>
+    </div>
+
+</div>
+{% endblock %}

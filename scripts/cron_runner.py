@@ -17,7 +17,7 @@ from src.live.ingestion import run_daily_update
 
 logger = logging.getLogger("cron_runner")
 
-SCHEDULE_HOURS = {6, 18}
+SCHEDULE_HOURS = {0, 12}
 CHECK_INTERVAL_SECONDS = 5 * 60  # 5 minutes
 
 

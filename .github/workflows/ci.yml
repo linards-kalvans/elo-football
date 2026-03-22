@@ -71,14 +71,14 @@ jobs:
             docker compose up -d --build --force-recreate
 
             # 3. Run schema migrations (safe to run multiple times)
-            docker compose exec app python -c "import asyncio; from src.db.migrate import run_migrations; asyncio.run(run_migrations())"
+            docker compose exec elokit-app python -c "import asyncio; from src.db.migrate import run_migrations; asyncio.run(run_migrations())"
 
             # 4. Incremental data update (appends new matches, recomputes ratings)
-            docker compose exec app python -c "from src.pipeline import run_incremental_update; run_incremental_update()"
+            docker compose exec elokit-app python -c "from src.pipeline import run_incremental_update; run_incremental_update()"
 
             # 5. Health check — retry up to 5 times with 3s delay
             for i in 1 2 3 4 5; do
-              if docker compose exec app python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"; then
+              if docker compose exec elokit-app python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"; then
                 echo "Health check passed on attempt $i"
                 break
               fi
