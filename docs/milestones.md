@@ -118,7 +118,7 @@ Ship the user-facing web application — the project's ultimate deliverable.
 
 ## M4.5: Advanced Chart Features & Export
 
-**Sprints:** TBD | **Status:** PARTIALLY COMPLETE
+**Sprints:** 27 | **Status:** PARTIALLY COMPLETE
 
 Further enhance ApexCharts visualizations with export and preset features deferred from Sprints 7-8.
 
@@ -144,7 +144,7 @@ Further enhance ApexCharts visualizations with export and preset features deferr
 
 ## M5: Advanced Parameter Optimization
 
-**Sprints:** TBD | **Status:** NOT STARTED
+**Sprints:** 24 | **Status:** NOT STARTED
 
 Replace the brute-force grid sweep with a principled optimization framework. The current `param_sweep.py` tests a fixed grid of ~1,000 combinations — this doesn't scale as the parameter space grows (per-league tuning, tier weights, MoV coefficients).
 
@@ -174,7 +174,7 @@ Replace the brute-force grid sweep with a principled optimization framework. The
 
 ## M6: Full UEFA League Coverage
 
-**Sprints:** TBD | **Status:** NOT STARTED
+**Sprints:** 25–26 | **Status:** NOT STARTED
 
 Expand from top-5 leagues to all UEFA member association domestic leagues. This is a data scale and normalization challenge — the Elo engine itself should work unchanged.
 
@@ -206,7 +206,7 @@ Expand from top-5 leagues to all UEFA member association domestic leagues. This 
 
 ## M7: Two-Leg Tie Modeling
 
-**Sprints:** TBD | **Status:** NOT STARTED
+**Sprints:** 23 | **Status:** NOT STARTED
 
 Decide how the Elo engine treats two-leg playoff ties (home and away) that appear throughout European competitions and some domestic cups. The current engine processes every row as an independent match, but two-leg ties are structurally linked — the second leg is played under the context of the first-leg result (aggregate score, away goals rule pre-2021, extra time/penalties).
 
@@ -578,6 +578,222 @@ Recommended: λ=0.85, N=10
 
 ---
 
+## M15: Per-Competition Elo Contribution
+
+**Sprint:** 16 | **Status:** NOT STARTED | **Priority:** MEDIUM
+
+A team's global Elo rating is the cumulative result of all matches across every competition they've played. This milestone adds a **per-competition Elo contribution breakdown** — showing how much of a team's rating change was earned (or lost) in each competition, per season or all-time.
+
+**Example:** Liverpool in 2024-25
+- Premier League: −18 (disappointing domestic form)
+- Champions League: +34 (strong European campaign)
+- League Cup: +5 (early rounds)
+
+### No Schema Changes Required
+
+The data already exists via the `ratings_history → matches → competitions` JOIN:
+
+```sql
+SELECT c.name, c.tier, SUM(rh.rating_delta) AS elo_contribution,
+       COUNT(*) AS matches_played
+FROM ratings_history rh
+JOIN matches m ON m.id = rh.match_id
+JOIN competitions c ON c.id = m.competition_id
+WHERE rh.team_id = ? AND rh.date >= ?
+GROUP BY c.id
+ORDER BY elo_contribution DESC
+```
+
+### Scope
+
+**15a. API Endpoint**
+- `GET /api/teams/{team_id}/competition-breakdown?season=2024-25`
+- Default: current season. Season selector uses `YYYY-YY` format.
+- `all_time=true` param for cumulative lifetime contribution
+- Returns: `[{competition, tier, elo_contribution, matches_played, wins, draws, losses}]`
+
+**15b. Frontend Widget — Team Context**
+- Horizontal bar chart in the team detail view (when URL is `/{nation}/{league}/{team}`)
+- Competitions as rows, Elo contribution as colored bars (green for positive, red for negative)
+- Season selector dropdown with "All time" option
+
+**15c. Stage Weighting Enhancement (sub-feature, future)**
+- Current: T1=CL knockout (1.5×), T2=CL group (1.2×) — already stage-aware
+- Possible future enhancement: split within knockout rounds (R16=1.3×, QF=1.4×, SF=1.5×, Final=1.6×)
+- Requires tagging match stage in `src/european_data.py` and re-running the full pipeline
+- **Treat as a separate research sprint** akin to M7
+
+**Depends on:** M4 (web app), M11 (EloKit layout), M3 (ratings_history with match_id)
+
+**Exit criteria:**
+- [ ] `GET /api/teams/{team_id}/competition-breakdown` returns per-competition Elo deltas
+- [ ] Season filtering works (default current season, `all_time=true` for cumulative)
+- [ ] Frontend widget in team context with season selector
+- [ ] API contract doc updated
+- [ ] Tests added for new endpoint
+
+---
+
+## M16: Monte Carlo Season Simulation
+
+**Sprint:** 18 | **Status:** NOT STARTED | **Priority:** HIGH
+
+Simulate the remainder of the current season using Elo win probabilities to produce a probability distribution over final league standings for every team. Users can see each club's likelihood of winning the title, qualifying for European competition, or getting relegated.
+
+**Scope:**
+- For each remaining fixture in a league, sample match outcomes (H/D/A) from the current Elo-derived probabilities
+- Run N iterations (e.g., 10,000) to build a distribution over final points totals and table positions
+- Aggregate results: `P(champion)`, `P(top 4)`, `P(relegated)` per team
+- `GET /api/simulations/{competition_slug}` — returns current-season simulation results (cached, refreshed on daily update)
+- Frontend: league context shows a simulation table with probability columns alongside current standings
+
+**Depends on:** M4 (web app), M8 (live fixtures), M11 (EloKit)
+
+**Key questions to resolve:**
+- How to handle matches already played mid-simulation run vs. remaining-only?
+- Cache invalidation: re-run simulation after each daily update or on demand?
+- Draw probability treatment: use existing three-way Elo prediction directly?
+
+**Exit criteria:**
+- [ ] Monte Carlo simulation runs for all 5 domestic leagues (current season)
+- [ ] `GET /api/simulations/{competition_slug}` returns position probabilities per team
+- [ ] Frontend simulation table in league context
+- [ ] Simulation results refreshed as part of daily update pipeline
+- [ ] Tests added for simulation logic and endpoint
+
+---
+
+## M17: Upset Index & Historical Upsets Log
+
+**Sprint:** 17 | **Status:** NOT STARTED | **Priority:** MEDIUM
+
+Rank all historical matches by the size of the Elo upset — matches where a large underdog won. Surface the biggest upsets in the dataset as an engaging editorial feature.
+
+**Scope:**
+- Upset score: Elo differential between winner and loser at time of match (pre-match ratings already in `ratings_history`)
+- `GET /api/upsets?top=50&competition=...&season=...` — returns top-N biggest upsets with match details and Elo context
+- Frontend: "Biggest Upsets" widget on global/league/competition context pages, sortable table
+- Optional: per-team "biggest upsets caused" stat on team context
+
+**Depends on:** M3 (ratings_history with pre-match data), M4 (web app), M11 (EloKit)
+
+**Key questions to resolve:**
+- Use absolute Elo difference or implied probability swing as the upset metric?
+- Include draws as partial upsets when a heavy favourite fails to win?
+
+**Exit criteria:**
+- [ ] `GET /api/upsets` endpoint with competition and season filters
+- [ ] Frontend upsets widget on global and league contexts
+- [ ] Pre-match Elo differential computable from `ratings_history` for all backfilled matches
+- [ ] Tests added for endpoint and ranking logic
+
+---
+
+## M18: Expected Goals (xG) Elo Updates
+
+**Sprint:** 22 | **Status:** NOT STARTED | **Priority:** MEDIUM
+
+Replace raw match result (W/D/L) with expected goals (xG) as the signal for Elo updates. A team that loses 1-0 despite generating 3.2 xG vs 0.4 xG should be penalised less than a team that was genuinely outplayed.
+
+**Scope:**
+- Source xG data: football-data.org free tier does not include xG; evaluate Understat (scrape), StatsBomb open data, or FBref
+- Modify `EloEngine.elo_update()` to accept optional xG values; derive an "xG result" (xG-weighted H/D/A or continuous score)
+- Validate: compare Brier score on held-out seasons for xG-Elo vs. current goals-based Elo
+- Document decision as ADR
+
+**Depends on:** M1 (algorithm), M3 (pipeline)
+
+**Key questions to resolve:**
+- Data source availability and coverage for all 5 leagues + European competitions?
+- How to handle matches with missing xG (fall back to goals)?
+- Treat xG result as continuous score or discretise to H/D/A?
+- Does xG signal add meaningful predictive power beyond MoV scaling already in place?
+
+**Exit criteria:**
+- [ ] xG data sourced for at least the top-5 domestic leagues (2016-present)
+- [ ] `elo_update()` extended with optional xG input (backward compatible)
+- [ ] Held-out Brier score comparison (xG-Elo vs. current) documented
+- [ ] ADR written with decision and evidence
+- [ ] Tests cover xG path and fallback to goals
+
+---
+
+## M19: Public REST API
+
+**Sprint:** 20 | **Status:** NOT STARTED | **Priority:** MEDIUM
+
+Make the existing `/api/*` endpoints publicly accessible with basic rate limiting and optional API key authentication, so developers and analysts can build on top of EloKit ratings.
+
+**Scope:**
+- API key issuance: simple static key table in DB or env-configured allow-list (no OAuth)
+- Rate limiting: per-key or per-IP token bucket (reuse existing token-bucket pattern from `src/live/`)
+- Public documentation: expose `/api/docs` (FastAPI OpenAPI) publicly; update `docs/api-contract.md` with auth instructions
+- Decide which endpoints are public (rankings, team ratings, predictions) vs. internal-only (admin, pipeline triggers)
+- CORS: allow all origins for public read endpoints
+
+**Depends on:** M4 (web app), M6 (full league coverage is a prerequisite for a compelling public API)
+
+**Key questions to resolve:**
+- Key issuance flow: self-serve signup page vs. email-based vs. fully open (no auth)?
+- Rate limit tiers: anonymous vs. keyed?
+- Which endpoints remain internal (e.g., pipeline trigger)?
+
+**Exit criteria:**
+- [ ] Rate limiting applied to all public API endpoints
+- [ ] Optional API key header accepted and validated
+- [ ] `/api/docs` (OpenAPI UI) publicly accessible
+- [ ] `docs/api-contract.md` updated with auth and rate-limit details
+- [ ] At least one usage example (curl / Python snippet) in the docs
+
+---
+
+## M20: Head-to-Head Historical Analysis
+
+**Sprint:** 17 | **Status:** NOT STARTED | **Priority:** MEDIUM
+
+Select any two teams and view their historical head-to-head record enriched with Elo context: record (W/D/L), Elo differential over time, and how the Elo-predicted win probability has evolved across their meetings.
+
+**Scope:**
+- `GET /api/h2h?team_a={id}&team_b={id}&season=...` — returns all H2H matches with pre-match Elo ratings, predicted probabilities, and actual results
+- Summary stats: W/D/L record, average Elo differential, biggest upset (by Elo)
+- Frontend: H2H widget accessible from the team prediction widget (after selecting two teams)
+- Chart: Elo rating of both teams plotted over time with H2H match markers
+
+**Depends on:** M4 (prediction widget), M11 (EloKit), M3 (ratings_history)
+
+**Exit criteria:**
+- [ ] `GET /api/h2h` endpoint returning H2H matches with Elo context
+- [ ] W/D/L summary and average Elo differential
+- [ ] Frontend H2H panel accessible from the prediction widget
+- [ ] Tests added for endpoint and history retrieval
+
+---
+
+## M21: Undervalued / Overvalued Team Metric
+
+**Sprint:** 19 | **Status:** NOT STARTED | **Priority:** LOW
+
+Surface teams whose recent results don't match their Elo rating — e.g., a team on a 6-game winning streak whose Elo has barely moved because they've been beating weak opponents. Conversely, a high-Elo team losing form. Framed as an editorial "hidden gems / overrated clubs" stat.
+
+**Scope:**
+- Metric: compare a team's recent actual points-per-game (last N matches) vs. Elo-implied expected points-per-game against the same opponents
+- Positive gap (outperforming Elo expectations) → "undervalued"; negative gap → "overvalued"
+- `GET /api/teams/{team_id}/performance-vs-expectation?n=10` — returns the gap metric with match-level breakdown
+- Frontend: "Undervalued / Overvalued" widget on global or league context, sortable table
+
+**Note:** Research has shown momentum (recent Elo delta EWMA) adds no predictive value (M14). This metric is explicitly a display/editorial feature — **not** used in match probability calculations.
+
+**Depends on:** M4, M8 (live fixtures for current-season results), M11 (EloKit)
+
+**Exit criteria:**
+- [ ] Performance-vs-expectation metric computed for all teams
+- [ ] `GET /api/teams/{team_id}/performance-vs-expectation` endpoint
+- [ ] Global/league context widget listing teams by gap
+- [ ] **Not** used in prediction probability calculations
+- [ ] Tests added
+
+---
+
 ## Sprint Roadmap
 
 | Sprint | Milestones | Focus | Status |
@@ -597,12 +813,18 @@ Recommended: λ=0.85, N=10
 | **14** | **M9 (9a.1, 9a.2, 9b)** | **Prediction scoring pipeline fix, 403 retry, historical prediction backfill (20,263 predictions)** | **COMPLETED** |
 | **15** | **M13 (13a, 13d, 13d.1, 13e)** | **Detailed accuracy view: Prediction Performance Grid, searchable Match Prediction Log, context-aware scoping** | **COMPLETED** |
 | **15.1** | **M13 (13b–c, 13f–h)** | **Calibration chart, Brier time series, API contract doc update, Elo change on fixtures, logo & breadcrumb polish** | **COMPLETED** |
-| **15.2** | **M9, M13** | **Bug fixes: Brier trend time axis (use match date), prediction history empty in non-team scopes** | **PLANNED** |
-| **16** | **M4.5** | **Chart export (PNG/CSV), presets, shareable configs** | **PLANNED** |
-| **17** | **M5** | **Bayesian parameter optimization (Optuna), tier weight sweep** | **PLANNED** |
-| **18** | **M7** | **Two-leg tie analysis & modeling** | **PLANNED** |
-| **19–20** | **M6** | **Full UEFA league expansion (data sourcing + frontend)** | **PLANNED** |
-| **TBD** | **M12 (Phase 2)** | **Club logos/crests for 325+ teams** | **PLANNED** |
+| **15.2** | **M9, M13** | **Bug fixes: Brier trend time axis (use match date), prediction history empty in non-team scopes** | **COMPLETED** |
+| **16** | **M15** | **Per-competition Elo contribution breakdown (team context widget + API)** | **PLANNED** |
+| **17** | **M17, M20** | **Upset Index (biggest upsets by Elo diff) + Head-to-head historical analysis** | **PLANNED** |
+| **18** | **M16** | **Monte Carlo season simulation — title/top-4/relegation probabilities** | **PLANNED** |
+| **19** | **M21** | **Undervalued/overvalued team metric (display only, editorial feature)** | **PLANNED** |
+| **20** | **M19** | **Public REST API — rate limiting, API key auth, OpenAPI docs** | **PLANNED** |
+| **21** | **M12 (Phase 2)** | **Club logos/crests for 325+ teams** | **PLANNED** |
+| **22** | **M18** | **xG integration research — data sourcing, Brier validation, ADR** | **PLANNED** |
+| **23** | **M7** | **Two-leg tie analysis & modeling (research sprint)** | **PLANNED** |
+| **24** | **M5** | **Bayesian parameter optimization — per-league tuning, cross-validation** | **PLANNED** |
+| **25–26** | **M6** | **Full UEFA league expansion (data sourcing + frontend)** | **PLANNED** |
+| **27** | **M4.5** | **Chart export (PNG/CSV), presets, shareable configs** | **PLANNED** |
 
 ---
 
@@ -616,9 +838,11 @@ M1 (Algorithm) ✅
        │     │     ├── Sprint 6: Backend + API docs ✅
        │     │     ├── Sprint 7: Frontend + charts ✅
        │     │     └── Sprint 8: Predictions, Docker, CI/CD ✅
-       │     │           ├──▶ M4.5 (Advanced Chart Features) [PARTIAL — Sprint 16]
+       │     │           ├──▶ M4.5 (Advanced Chart Features) [PARTIAL — Sprint 27]
        │     │           └──▶ M11 (UI Redesign — EloKit) ✅ [Sprints 12, 12.1]
        │     │                 └──▶ M12 (Flags & Logos) [Sprint 13 + TBD]
+       │     │
+       │     ├──▶ M15 (Per-Competition Elo Contribution) [Sprint 16]
        │     │
        │     ├──▶ M10 (Elo Calibration Fix) ✅ [Sprint 9]
        │     │
@@ -628,13 +852,20 @@ M1 (Algorithm) ✅
        │     │           └──▶ M9 (Prediction Tracking) [PARTIAL — 9b backfill in Sprint 14]
        │     │                 └──▶ M13 (Detailed Accuracy View) [Sprint 15]
        │     │
-       │     └──▶ M5 (Advanced Parameter Optimization) [Sprint 16]
+       │     └──▶ M5 (Advanced Parameter Optimization) [Sprint 18]
        │
-       ├──▶ M6 (Full UEFA League Coverage) [Sprints 19-20]
+       ├──▶ M6 (Full UEFA League Coverage) [Sprints 20-21]
        │     [depends on M2 + M3 + M4]
        │
-       └──▶ M7 (Two-Leg Tie Modeling) [Sprint 18]
+       └──▶ M7 (Two-Leg Tie Modeling) [Sprint 19]
              [depends on M2]
+
+M3 + M4 + M8 + M11 ──▶ M16 (Monte Carlo Season Simulation) [Sprint 18]
+M3 + M4 + M11       ──▶ M17 (Upset Index) [Sprint 17]
+M1 + M3             ──▶ M18 (xG Elo Updates) [Sprint 22 — research sprint]
+M4 + M6             ──▶ M19 (Public REST API) [Sprint 20]
+M3 + M4 + M11       ──▶ M20 (Head-to-Head Analysis) [Sprint 17]
+M4 + M8 + M11       ──▶ M21 (Undervalued/Overvalued Metric) [Sprint 19]
 ```
 
 ## Architectural Decisions Tracker
